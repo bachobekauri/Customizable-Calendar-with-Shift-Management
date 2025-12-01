@@ -1,0 +1,23 @@
+{
+  "name": "customizable-calendar-with-shift-management",
+  "version": "1.0.0",
+  "description": "Denji, CHAINSAWWWWWWWW",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bachobekauri/Customizable-Calendar-with-Shift-Management.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/bachobekauri/Customizable-Calendar-with-Shift-Management/issues"
+  },
+  "homepage": "https://github.com/bachobekauri/Customizable-Calendar-with-Shift-Management#readme",
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}
