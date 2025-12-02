@@ -36,14 +36,34 @@ const LoginPage = () => {
           </div>
           <button>Forgot Password</button>
         </div>
-        <button className='signInButton'>Sign in</button>
+<button
+  className='signInButton'
+  onClick={() => {
+    // OPTIONAL: add validation here
+    if (!email || !password) {
+      alert("Please enter email and password");
+      return;
+    }
+
+    // Successful: redirect to main page
+    window.location.href = "/main";
+  }}
+>
+  Sign in
+</button>
         <p className='signUpParagraph'>
-          Don’t have an account? <button style={{ color: "#EA454C" }}>Sign up fo free!</button>
+          Don’t have an account? <button
+  style={{ color: "#EA454C" }}
+  onClick={() => window.location.href = "/signup"}
+>
+  Sign up for free!
+</button>
+
         </p>
       </div>
 
       <div className='wrapper-right'>
-        <img src='/LoginImage.png'></img>
+        <img src='/LoginImage.png' alt=""  ></img>
       </div>
     </div>
   );

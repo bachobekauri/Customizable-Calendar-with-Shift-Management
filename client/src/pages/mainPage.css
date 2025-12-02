@@ -1,0 +1,178 @@
+/* LAYOUT */
+.main-container {
+  display: flex;
+  height: 100vh;
+  background: #f5f6fa;
+  font-family: Inter, sans-serif;
+}
+
+/* SIDEBAR */
+.sidebar {
+  width: 230px;
+  background: #1c1524;
+  color: white;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  border-radius: 20px 0 0 20px;
+}
+
+.logo {
+  font-size: 22px;
+  font-weight: bold;
+  margin-bottom: 30px;
+}
+
+.sidebar nav button {
+  display: block;
+  background: none;
+  color: #dcdcdc;
+  border: none;
+  padding: 12px 0;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+
+.sidebar nav button.active {
+  color: white;
+  font-weight: 600;
+}
+
+.profile {
+  margin-top: auto;
+  margin-bottom: 20px;
+  opacity: 0.6;
+}
+
+/* CONTENT AREA */
+.content {
+  flex: 1;
+  padding: 20px 30px;
+}
+
+/* TOP BAR FILTERS */
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.chip {
+  background: #eeeeee;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 20px;
+  margin-right: 8px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.chip.active {
+  background: #1e1e2e;
+  color: white;
+}
+
+.chip.filter {
+  color: #0aa0aa;
+}
+
+/* CALENDAR GRID */
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 16px;
+  height: calc(100vh - 180px);
+  overflow-y: auto;
+}
+
+.day-column {
+  background: white;
+  border-radius: 15px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* DAY HEADER */
+.day-header {
+  margin-bottom: 12px;
+}
+
+.weekday {
+  font-size: 13px;
+  opacity: 0.6;
+}
+
+.daynum {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.meta {
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+/* SHIFT CARD */
+.shift-card {
+  background: #f9f9fb;
+  border-radius: 18px;
+  padding: 14px;
+  margin-bottom: 12px;
+  border-left: 4px solid #40c3d8;
+}
+
+.time {
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: 5px;
+}
+
+.meta-row {
+  font-size: 13px;
+  opacity: 0.7;
+  margin-bottom: 3px;
+}
+
+/* AVATARS */
+.avatar-row {
+  display: flex;
+  margin-top: 8px;
+}
+
+.avatar {
+  width: 26px;
+  height: 26px;
+  background: #ccc;
+  border-radius: 50%;
+  margin-right: -6px;
+  border: 2px solid white;
+}
+
+.avatar.small {
+  width: 26px;
+  height: 26px;
+  background: #eee;
+  font-size: 12px;
+  color: #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* FLOATING BUTTON */
+.add-btn {
+  position: absolute;
+  bottom: 25px;
+  right: 25px;
+  background: #4bd4cd;
+  border: none;
+  width: 60px;
+  height: 60px;
+  font-size: 32px;
+  border-radius: 50%;
+  color: white;
+  cursor: pointer;
+}

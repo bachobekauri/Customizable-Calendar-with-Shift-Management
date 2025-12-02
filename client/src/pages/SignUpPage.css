@@ -1,0 +1,72 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;500;600;700&display=swap');
+
+* { margin: 0; padding: 0; border: 0; }
+
+.container {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+}
+
+.wrapper-left {
+    width: 50%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.wrapper-right {
+    width: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.headline {
+    margin-bottom: 40px;
+    text-align: center;
+}
+
+.roleSelector {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 25px;
+}
+
+.roleBtn {
+    padding: 8px 15px;
+    border-radius: 10px;
+    border: 1px solid #999;
+    background: white;
+    cursor: pointer;
+    font-family: Poppins;
+}
+
+.roleBtn.active {
+    background: #EA454C;
+    color: white;
+    border-color: #EA454C;
+}
+
+.inputField {
+    width: 310px;
+    height: 40px;
+    margin-bottom: 20px;
+    padding-left: 15px;
+    border: 1px solid rgba(0,0,0,0.25);
+    border-radius: 12px;
+}
+
+.signInButton {
+    width: 310px;
+    height: 40px;
+    background: #EA454C;
+    color: white;
+    border-radius: 12px;
+    margin-top: 10px;
+}
+
+.signUpParagraph {
+    margin-top: 10px;
+}
