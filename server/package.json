@@ -1,17 +1,24 @@
 {
-  "name": "customizable-calendar-with-shift-management",
+  "name": "shift-calendar-backend",
   "version": "1.0.0",
-  "description": "Denji, CHAINSAWWWWWWWW",
+  "description": "Backend for Customizable Calendar with Shift Management",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js"
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "init-db": "node init-db.js",
+    "reset-db": "node reset-db.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/bachobekauri/Customizable-Calendar-with-Shift-Management.git"
   },
-  "keywords": [],
+  "keywords": [
+    "shift-management",
+    "calendar",
+    "employee-scheduling"
+  ],
   "author": "",
   "license": "ISC",
   "bugs": {
@@ -19,7 +26,18 @@
   },
   "homepage": "https://github.com/bachobekauri/Customizable-Calendar-with-Shift-Management#readme",
   "dependencies": {
+    "express": "^5.1.0",
     "cors": "^2.8.5",
-    "express": "^5.1.0"
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "sqlite3": "^5.1.6",
+    "dotenv": "^16.3.1",
+    "helmet": "^7.1.0",
+    "morgan": "^1.10.0",
+    "moment": "^2.29.4",
+    "express-validator": "^7.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
   }
 }

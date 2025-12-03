@@ -1,9 +1,22 @@
 import './loginPage.css';
 import React, { useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
+
 const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
+  const { login, error } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const result = await login(email, password);
+    if (result.success) {
+      navigate('/main');
+    }
+  };
 
   return (
     <div className='container'>
@@ -17,53 +30,76 @@ const LoginPage = () => {
           </p>
         </div>
 
-        <div>
-          <p>Email</p>
-          <input type='email' value={email} onChange={(e) => setEmail(e.target.value)}
-            placeholder="Enter your email" className='inputField'></input>
-        </div>
-
-        <div>
-          <p>Password</p>
-          <input type='password' value={password} onChange={(e) => setPassword(e.target.value)}
-            placeholder="***********" className='inputField'></input>
-        </div>
-        <div className='radioField'>
-          <div style={{ display: "flex" }}>
-            <input type='checkbox' value={rememberMe} onChange={(e) => setRememberMe(e.target.value)}>
-            </input>
-            <p>Remember me</p>
+        {error && (
+          <div style={{ 
+            color: '#EA454C', 
+            backgroundColor: '#FFE6E7', 
+            padding: '10px', 
+            borderRadius: '8px',
+            marginBottom: '20px',
+            width: '310px'
+          }}>
+            {error}
           </div>
-          <button>Forgot Password</button>
-        </div>
-<button
-  className='signInButton'
-  onClick={() => {
-    // OPTIONAL: add validation here
-    if (!email || !password) {
-      alert("Please enter email and password");
-      return;
-    }
+        )}
 
-    // Successful: redirect to main page
-    window.location.href = "/main";
-  }}
->
-  Sign in
-</button>
+        <form onSubmit={handleSubmit}>
+          <div>
+            <p>Email</p>
+            <input 
+              type='email' 
+              value={email} 
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Enter your email" 
+              className='inputField'
+              required
+            />
+          </div>
+
+          <div>
+            <p>Password</p>
+            <input 
+              type='password' 
+              value={password} 
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="***********" 
+              className='inputField'
+              required
+            />
+          </div>
+          
+          <div className='radioField'>
+            <div style={{ display: "flex" }}>
+              <input 
+                type='checkbox' 
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+              />
+              <p>Remember me</p>
+            </div>
+            <button type="button" style={{ background: 'none', border: 'none', color: '#EA454C', cursor: 'pointer' }}>
+              Forgot Password
+            </button>
+          </div>
+          
+          <button type="submit" className='signInButton'>
+            Sign in
+          </button>
+        </form>
+
         <p className='signUpParagraph'>
-          Don’t have an account? <button
-  style={{ color: "#EA454C" }}
-  onClick={() => window.location.href = "/signup"}
->
-  Sign up for free!
-</button>
-
+          Don't have an account? 
+          <button
+            style={{ color: "#EA454C", background: 'none', border: 'none', cursor: 'pointer' }}
+            onClick={() => navigate('/signup')}
+          >
+            Sign up for free!
+          </button>
         </p>
       </div>
 
       <div className='wrapper-right'>
-        <img src='/LoginImage.png' alt=""  ></img>
+        <img src='/LoginImage.png' alt="Workplace illustration" />
       </div>
     </div>
   );
