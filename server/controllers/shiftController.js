@@ -436,12 +436,13 @@ exports.deleteShift = async (req, res) => {
       });
     }
 
-    if (req.user.role !== 'admin' && shift.created_by !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to delete this shift'
-      });
-    }
+    if (!['admin', 'manager'].includes(req.user.role) && shift.created_by !== req.user.id) {
+  return res.status(403).json({
+    success: false,
+    message: 'Not authorized to delete this shift'
+  });
+}
+
 
     await db.runAsync('DELETE FROM shifts WHERE id = ?', [req.params.id]);
 
@@ -458,22 +459,38 @@ exports.deleteShift = async (req, res) => {
   }
 };
 
-// @desc    Get shifts by week
+// @desc    Get shifts by week - FIXED VERSION
 // @route   GET /api/shifts/week/:date
 // @access  Private
 exports.getShiftsByWeek = async (req, res) => {
   try {
+    console.log('Getting shifts for week starting:', req.params.date);
+    
     const date = req.params.date || new Date().toISOString().split('T')[0];
     
-    const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust for Sunday
-    const monday = new Date(d.setDate(diff));
-    monday.setHours(0, 0, 0, 0);
+    // Parse the input date
+    const inputDate = new Date(date + 'T00:00:00.000Z');
     
+    // Get the day of week (0 = Sunday, 1 = Monday, etc.)
+    const dayOfWeek = inputDate.getUTCDay();
+    
+    // Calculate days to Monday (if Sunday, go back 6 days; if Monday, 0 days; etc.)
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    
+    // Set to Monday of the week
+    const monday = new Date(inputDate);
+    monday.setUTCDate(inputDate.getUTCDate() - daysToMonday);
+    monday.setUTCHours(0, 0, 0, 0);
+    
+    // Set to Friday of the week
     const friday = new Date(monday);
-    friday.setDate(monday.getDate() + 4);
-    friday.setHours(23, 59, 59, 999);
+    friday.setUTCDate(monday.getUTCDate() + 4);
+    friday.setUTCHours(23, 59, 59, 999);
+
+    console.log('Week range:', {
+      monday: monday.toISOString(),
+      friday: friday.toISOString()
+    });
 
     let query = `
       SELECT s.*, 
@@ -486,6 +503,7 @@ exports.getShiftsByWeek = async (req, res) => {
     `;
     const params = [monday.toISOString(), friday.toISOString()];
 
+    // If employee, only show their shifts
     if (req.user.role === 'employee') {
       query += `
         AND s.id IN (
@@ -500,7 +518,10 @@ exports.getShiftsByWeek = async (req, res) => {
     query += ` ORDER BY s.start_time ASC`;
 
     const shifts = await db.allAsync(query, params);
+    
+    console.log(`Found ${shifts.length} shifts for the week`);
 
+    // Get employees for each shift
     const shiftsWithEmployees = await Promise.all(
       shifts.map(async (shift) => {
         const employees = await db.allAsync(
@@ -530,14 +551,31 @@ exports.getShiftsByWeek = async (req, res) => {
       })
     );
 
+    // Group shifts by day (YYYY-MM-DD format)
     const shiftsByDay = {};
+    
+    // Initialize all weekdays
+    for (let i = 0; i < 5; i++) {
+      const day = new Date(monday);
+      day.setUTCDate(monday.getUTCDate() + i);
+      const dayKey = day.toISOString().split('T')[0];
+      shiftsByDay[dayKey] = [];
+    }
+    
+    // Add shifts to their respective days
     shiftsWithEmployees.forEach(shift => {
-      const day = new Date(shift.startTime).toISOString().split('T')[0];
-      if (!shiftsByDay[day]) {
-        shiftsByDay[day] = [];
+      const shiftDate = new Date(shift.startTime);
+      const dayKey = shiftDate.toISOString().split('T')[0];
+      
+      if (shiftsByDay[dayKey]) {
+        shiftsByDay[dayKey].push(shift);
       }
-      shiftsByDay[day].push(shift);
     });
+
+    console.log('Shifts grouped by day:', Object.keys(shiftsByDay).map(day => ({
+      day,
+      count: shiftsByDay[day].length
+    })));
 
     res.json({
       success: true,
@@ -549,7 +587,7 @@ exports.getShiftsByWeek = async (req, res) => {
     console.error('Get shifts by week error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error fetching shifts by week'
+      message: 'Server error fetching shifts by week: ' + error.message
     });
   }
 };

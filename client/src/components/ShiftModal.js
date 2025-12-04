@@ -1,147 +1,252 @@
-import React, { useState, useEffect } from 'react';
-import moment from 'moment';
-import './ShiftModal.css';
+import React, { useState, useEffect } from "react";
+import moment from "moment";
+import "./ShiftModal.css";
 
-const ShiftModal = ({ shift, onSave, onDelete, onClose, user, availableUsers = [], isDayMode = false }) => {
-  const isEditing = shift && shift._id;
-  const isManager = user?.role === 'manager' || user?.role === 'admin';
+/**
+ * Props:
+ * - shift: the shift object or null for new
+ * - onSave(shiftData): async handler provided by parent
+ * - onDelete(shiftId): async handler provided by parent
+ * - onClose(): close modal
+ * - user: current user (for role/department)
+ * - availableUsers: array of employees to assign
+ * - isDayMode: boolean - true when modal created from a specific day (time-only inputs)
+ * - error: (optional) error string from parent (API errors)
+ * - clearError: (optional) function to clear parent error
+ */
+const ShiftModal = ({
+  shift,
+  onSave,
+  onDelete,
+  onClose,
+  user,
+  availableUsers = [],
+  isDayMode = false,
+  error: parentError = null,
+  clearError = () => {},
+}) => {
+  const isEditing = !!(shift && shift._id);
+  const isManager = user?.role === "manager" || user?.role === "admin";
   const isDaySpecific = isDayMode && !isEditing;
-  
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    startTime: '',
-    endTime: '',
-    department: user?.department || 'General',
-    requiredEmployees: 1,
-    hourlyRate: 20,
-    location: 'Main Office',
-    status: 'published',
-    employees: []
-  });
 
+  // local validation error (client-side)
+  const [validationError, setValidationError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [selectedEmployees, setSelectedEmployees] = useState([]);
 
-  useEffect(() => {
-    if (isEditing) {
-      // Editing existing shift
-      setFormData({
-        title: shift.title || '',
-        description: shift.description || '',
-        startTime: moment(shift.startTime).format('YYYY-MM-DDTHH:mm'),
-        endTime: moment(shift.endTime).format('YYYY-MM-DDTHH:mm'),
-        department: shift.department || user?.department || 'General',
-        requiredEmployees: shift.requiredEmployees || 1,
-        hourlyRate: shift.hourlyRate || 20,
-        location: shift.location || 'Main Office',
-        status: shift.status || 'published',
-        employees: shift.employees?.map(e => e._id) || []
-      });
-      setSelectedEmployees(shift.employees?.map(e => e._id) || []);
-    } else if (shift && isDaySpecific) {
-      // New shift for specific day - prefill date, show time only
-      const date = moment(shift.startTime).format('YYYY-MM-DD');
-      setFormData(prev => ({
-        ...prev,
-        startTime: `${date}T09:00`,
-        endTime: `${date}T17:00`,
-        department: shift.department || user?.department || 'General'
-      }));
-    } else if (shift) {
-      // New shift from floating button - no prefill
-      setFormData(prev => ({
-        ...prev,
-        startTime: moment(shift.startTime).format('YYYY-MM-DDTHH:mm'),
-        endTime: moment(shift.endTime).format('YYYY-MM-DDTHH:mm'),
-        department: shift.department || user?.department || 'General'
-      }));
-    }
-  }, [shift, isEditing, user, isDaySpecific]);
+  // formData stores ISO-ish strings for datetime-local inputs or 'YYYY-MM-DDTHH:mm' format
+  const [formData, setFormData] = useState({
+    title: "",
+    description: "",
+    startTime: "", // 'YYYY-MM-DDTHH:mm'
+    endTime: "",
+    department: user?.department || "General",
+    requiredEmployees: 1,
+    hourlyRate: 20,
+    location: "Main Office",
+    status: "published",
+    employees: [],
+  });
 
+  // Helper: normalize incoming shift dates into 'YYYY-MM-DDTHH:mm' strings
+  const normalizeShiftToForm = (s) => {
+    const safeStart = s?.startTime ? moment(s.startTime).local() : null;
+    const safeEnd = s?.endTime ? moment(s.endTime).local() : null;
+    return {
+      title: s?.title || "",
+      description: s?.description || "",
+      startTime: safeStart ? safeStart.format("YYYY-MM-DDTHH:mm") : "",
+      endTime: safeEnd ? safeEnd.format("YYYY-MM-DDTHH:mm") : "",
+      department: s?.department || user?.department || "General",
+      requiredEmployees: s?.requiredEmployees || 1,
+      hourlyRate: s?.hourlyRate || 20,
+      location: s?.location || "Main Office",
+      status: s?.status || "published",
+      employees: Array.isArray(s?.employees) ? s.employees.map((e) => (e._id ? e._id : e)) : [],
+    };
+  };
+
+  // Initialize form when shift changes
+  useEffect(() => {
+    setValidationError(null);
+    clearError();
+
+    if (isEditing) {
+      // editing existing shift
+      const normalized = normalizeShiftToForm(shift || {});
+      setFormData(normalized);
+      setSelectedEmployees(normalized.employees || []);
+    } else if (shift && isDaySpecific) {
+      // new day-specific shift: shift may contain date info (shift.startTime used by MainPage)
+      // If shift.startTime exists and is a date object / ISO string, extract date part and set default times.
+      const dateMoment = shift?.startTime ? moment(shift.startTime).local() : moment().local();
+      const dateStr = dateMoment.format("YYYY-MM-DD");
+      setFormData((prev) => ({
+        ...prev,
+        startTime: `${dateStr}T09:00`,
+        endTime: `${dateStr}T17:00`,
+        department: shift.department || user?.department || prev.department,
+      }));
+      setSelectedEmployees([]);
+    } else if (shift) {
+      // If shift is provided but not day-specific, use its times (useful when parent pre-fills)
+      const normalized = normalizeShiftToForm(shift);
+      setFormData(normalized);
+      setSelectedEmployees(normalized.employees || []);
+    } else {
+      // fresh create
+      const today = moment().local().format("YYYY-MM-DD");
+      setFormData({
+        title: "",
+        description: "",
+        startTime: `${today}T09:00`,
+        endTime: `${today}T17:00`,
+        department: user?.department || "General",
+        requiredEmployees: 1,
+        hourlyRate: 20,
+        location: "Main Office",
+        status: "published",
+        employees: [],
+      });
+      setSelectedEmployees([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shift, isDayMode, user?.department, isEditing]);
+
+  // Local helpers
+  const handleEmployeeToggle = (id) => {
+    setSelectedEmployees((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const handleSelectAll = () => {
+    const allIds = availableUsers.map((u) => u._id || u.id);
+    setSelectedEmployees((prev) => (prev.length === allIds.length ? [] : allIds));
+  };
+
+  const calculateDuration = () => {
+    try {
+      if (!formData.startTime || !formData.endTime) return 0;
+      const start = moment(formData.startTime);
+      const end = moment(formData.endTime);
+      const hours = end.diff(start, "hours", true);
+      return Math.max(0, Math.round(hours * 10) / 10);
+    } catch {
+      return 0;
+    }
+  };
+
+  const calculateCost = () => {
+    const hours = calculateDuration();
+    const rate = Number(formData.hourlyRate) || 0;
+    const req = Number(formData.requiredEmployees) || 1;
+    return Math.round(hours * rate * req * 100) / 100;
+  };
+
+  // When user edits time inputs for day-specific mode: keep date part
+  const handleTimeChange = (field, timeValue) => {
+    if (isDaySpecific) {
+      // extract date from existing startTime (or today)
+      const date = formData.startTime ? moment(formData.startTime).format("YYYY-MM-DD") : moment().format("YYYY-MM-DD");
+      setFormData((prev) => ({ ...prev, [field]: `${date}T${timeValue}` }));
+    } else {
+      setFormData((prev) => ({ ...prev, [field]: timeValue }));
+    }
+  };
+
+  // Submit handler
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setValidationError(null);
+    clearError();
     setLoading(true);
-    
+
     try {
-      // Convert to proper date objects
-      const shiftData = {
+      // basic validation
+      if (!formData.title?.trim()) throw new Error("Please enter a title.");
+      if (!formData.startTime || !formData.endTime) throw new Error("Please provide start and end times.");
+
+      const start = moment(formData.startTime);
+      const end = moment(formData.endTime);
+
+      if (!start.isValid() || !end.isValid()) throw new Error("Invalid date/time format.");
+      if (!end.isAfter(start)) throw new Error("End time must be after start time.");
+
+      // prepare payload
+      const payload = {
         ...formData,
-        startTime: new Date(formData.startTime),
-        endTime: new Date(formData.endTime),
-        employees: selectedEmployees
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
+        employees: selectedEmployees,
       };
-      
-      await onSave(shiftData);
-    } catch (error) {
-      console.error('Error saving shift:', error);
-      alert(error.response?.data?.message || 'Failed to save shift');
+
+      // call parent onSave (await it so modal can show loading)
+      await onSave(payload);
+      // parent will close modal on success (per MainPage behavior)
+    } catch (err) {
+      // if parent returned an axios style error, show message if present
+      const message = err?.response?.data?.message || err?.message || String(err);
+      setValidationError(message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleEmployeeToggle = (employeeId) => {
-    setSelectedEmployees(prev => {
-      if (prev.includes(employeeId)) {
-        return prev.filter(id => id !== employeeId);
-      } else {
-        return [...prev, employeeId];
-      }
-    });
-  };
-
-  const handleSelectAll = () => {
-    if (selectedEmployees.length === availableUsers.length) {
-      setSelectedEmployees([]);
-    } else {
-      setSelectedEmployees(availableUsers.map(emp => emp._id || emp.id));
+  // Delete wrapper to show loading while parent handles confirm and deletion
+  const handleDeleteClick = async () => {
+    setValidationError(null);
+    clearError();
+    setLoading(true);
+    try {
+      await onDelete(shift._id);
+      // parent closes modal on successful delete
+    } catch (err) {
+      const message = err?.response?.data?.message || err?.message || "Failed to delete shift";
+      setValidationError(message);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const calculateDuration = () => {
-    if (formData.startTime && formData.endTime) {
-      const start = moment(formData.startTime);
-      const end = moment(formData.endTime);
-      const hours = end.diff(start, 'hours', true);
-      return Math.round(hours * 10) / 10;
-    }
-    return 0;
-  };
-
-  const calculateCost = () => {
-    const hours = calculateDuration();
-    return hours * formData.hourlyRate * formData.requiredEmployees;
-  };
-
-  const handleTimeChange = (field, value) => {
-    if (isDaySpecific) {
-      // For day-specific shifts, only update the time part
-      const date = moment(formData.startTime).format('YYYY-MM-DD');
-      const newDateTime = `${date}T${value}`;
-      setFormData(prev => ({
-        ...prev,
-        [field]: newDateTime
-      }));
-    } else {
-      setFormData(prev => ({
-        ...prev,
-        [field]: value
-      }));
-    }
-  };
+  // Error to display: local validation error takes priority over parent API error
+  const displayedError = validationError || parentError;
 
   return (
-    <div className="modal-overlay">
+    <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="shift-modal-title">
       <div className="modal-content">
         <div className="modal-header">
-          <h2>
-            {isEditing ? 'Edit Shift' : 
-             isDaySpecific ? 'Add Shift for ' + moment(formData.startTime).format('ddd, MMM D') : 
-             'Create New Shift'}
+          <h2 id="shift-modal-title">
+            {isEditing ? "Edit Shift" : isDaySpecific ? `Add Shift for ${moment(formData.startTime).format("ddd, MMM D")}` : "Create New Shift"}
           </h2>
-          <button className="close-btn" onClick={onClose}>×</button>
+          <button className="close-btn" onClick={onClose} aria-label="Close modal" disabled={loading}>
+            ×
+          </button>
         </div>
+
+        {displayedError && (
+          <div
+            className="modal-error"
+            style={{
+              backgroundColor: "#FFE6E7",
+              color: "#EA454C",
+              padding: "10px 12px",
+              borderRadius: 6,
+              marginBottom: 12,
+              fontSize: 14,
+            }}
+          >
+            <span style={{ flex: 1 }}>{displayedError}</span>
+            <button
+              onClick={() => {
+                setValidationError(null);
+                clearError();
+              }}
+              style={{ background: "transparent", border: "none", fontSize: 18, color: "#EA454C", cursor: "pointer" }}
+              aria-label="Dismiss error"
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
@@ -149,9 +254,9 @@ const ShiftModal = ({ shift, onSave, onDelete, onClose, user, availableUsers = [
             <input
               type="text"
               value={formData.title}
-              onChange={(e) => setFormData({...formData, title: e.target.value})}
+              onChange={(e) => setFormData((p) => ({ ...p, title: e.target.value }))}
               required
-              disabled={!isManager}
+              disabled={!isManager || loading}
               placeholder="Enter shift title"
             />
           </div>
@@ -160,9 +265,9 @@ const ShiftModal = ({ shift, onSave, onDelete, onClose, user, availableUsers = [
             <label>Description</label>
             <textarea
               value={formData.description}
-              onChange={(e) => setFormData({...formData, description: e.target.value})}
+              onChange={(e) => setFormData((p) => ({ ...p, description: e.target.value }))}
               rows="3"
-              disabled={!isManager}
+              disabled={!isManager || loading}
               placeholder="Shift description (optional)"
             />
           </div>
@@ -174,10 +279,10 @@ const ShiftModal = ({ shift, onSave, onDelete, onClose, user, availableUsers = [
                   <label>Start Time *</label>
                   <input
                     type="time"
-                    value={moment(formData.startTime).format('HH:mm')}
-                    onChange={(e) => handleTimeChange('startTime', e.target.value)}
+                    value={moment(formData.startTime).isValid() ? moment(formData.startTime).format("HH:mm") : "09:00"}
+                    onChange={(e) => handleTimeChange("startTime", e.target.value)}
                     required
-                    disabled={!isManager}
+                    disabled={!isManager || loading}
                   />
                 </div>
 
@@ -185,10 +290,10 @@ const ShiftModal = ({ shift, onSave, onDelete, onClose, user, availableUsers = [
                   <label>End Time *</label>
                   <input
                     type="time"
-                    value={moment(formData.endTime).format('HH:mm')}
-                    onChange={(e) => handleTimeChange('endTime', e.target.value)}
+                    value={moment(formData.endTime).isValid() ? moment(formData.endTime).format("HH:mm") : "17:00"}
+                    onChange={(e) => handleTimeChange("endTime", e.target.value)}
                     required
-                    disabled={!isManager}
+                    disabled={!isManager || loading}
                   />
                 </div>
               </>
@@ -198,10 +303,10 @@ const ShiftModal = ({ shift, onSave, onDelete, onClose, user, availableUsers = [
                   <label>Start Date & Time *</label>
                   <input
                     type="datetime-local"
-                    value={formData.startTime}
-                    onChange={(e) => setFormData({...formData, startTime: e.target.value})}
+                    value={formData.startTime || ""}
+                    onChange={(e) => setFormData((p) => ({ ...p, startTime: e.target.value }))}
                     required
-                    disabled={!isManager}
+                    disabled={!isManager || loading}
                   />
                 </div>
 
@@ -209,10 +314,10 @@ const ShiftModal = ({ shift, onSave, onDelete, onClose, user, availableUsers = [
                   <label>End Date & Time *</label>
                   <input
                     type="datetime-local"
-                    value={formData.endTime}
-                    onChange={(e) => setFormData({...formData, endTime: e.target.value})}
+                    value={formData.endTime || ""}
+                    onChange={(e) => setFormData((p) => ({ ...p, endTime: e.target.value }))}
                     required
-                    disabled={!isManager}
+                    disabled={!isManager || loading}
                   />
                 </div>
               </>
@@ -236,8 +341,8 @@ const ShiftModal = ({ shift, onSave, onDelete, onClose, user, availableUsers = [
               <label>Department</label>
               <select
                 value={formData.department}
-                onChange={(e) => setFormData({...formData, department: e.target.value})}
-                disabled={!isManager}
+                onChange={(e) => setFormData((p) => ({ ...p, department: e.target.value }))}
+                disabled={!isManager || loading}
               >
                 <option value="General">General</option>
                 <option value="Sales">Sales</option>
@@ -254,8 +359,8 @@ const ShiftModal = ({ shift, onSave, onDelete, onClose, user, availableUsers = [
                 type="number"
                 min="1"
                 value={formData.requiredEmployees}
-                onChange={(e) => setFormData({...formData, requiredEmployees: parseInt(e.target.value) || 1})}
-                disabled={!isManager}
+                onChange={(e) => setFormData((p) => ({ ...p, requiredEmployees: parseInt(e.target.value, 10) || 1 }))}
+                disabled={!isManager || loading}
               />
             </div>
           </div>
@@ -268,8 +373,8 @@ const ShiftModal = ({ shift, onSave, onDelete, onClose, user, availableUsers = [
                 step="0.01"
                 min="0"
                 value={formData.hourlyRate}
-                onChange={(e) => setFormData({...formData, hourlyRate: parseFloat(e.target.value) || 20})}
-                disabled={!isManager}
+                onChange={(e) => setFormData((p) => ({ ...p, hourlyRate: parseFloat(e.target.value) || 0 }))}
+                disabled={!isManager || loading}
               />
             </div>
 
@@ -277,8 +382,8 @@ const ShiftModal = ({ shift, onSave, onDelete, onClose, user, availableUsers = [
               <label>Status</label>
               <select
                 value={formData.status}
-                onChange={(e) => setFormData({...formData, status: e.target.value})}
-                disabled={!isManager}
+                onChange={(e) => setFormData((p) => ({ ...p, status: e.target.value }))}
+                disabled={!isManager || loading}
               >
                 <option value="draft">Draft</option>
                 <option value="published">Published</option>
@@ -293,98 +398,92 @@ const ShiftModal = ({ shift, onSave, onDelete, onClose, user, availableUsers = [
             <input
               type="text"
               value={formData.location}
-              onChange={(e) => setFormData({...formData, location: e.target.value})}
-              disabled={!isManager}
+              onChange={(e) => setFormData((p) => ({ ...p, location: e.target.value }))}
+              disabled={!isManager || loading}
               placeholder="Main Office"
             />
           </div>
 
           {isManager && availableUsers.length > 0 && (
             <div className="form-group">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                 <label>Assign Employees ({selectedEmployees.length} selected)</label>
                 <button
                   type="button"
                   onClick={handleSelectAll}
                   style={{
-                    padding: '5px 10px',
-                    backgroundColor: selectedEmployees.length === availableUsers.length ? '#EA454C' : '#40c3d8',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '12px'
+                    padding: "6px 10px",
+                    backgroundColor: selectedEmployees.length === availableUsers.length ? "#EA454C" : "#40c3d8",
+                    color: "white",
+                    border: "none",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    fontSize: 12,
                   }}
+                  disabled={loading}
                 >
-                  {selectedEmployees.length === availableUsers.length ? 'Deselect All' : 'Select All'}
+                  {selectedEmployees.length === availableUsers.length ? "Deselect All" : "Select All"}
                 </button>
               </div>
-              
-              <div className="employee-selector" style={{ maxHeight: '250px' }}>
+
+              <div className="employee-selector" style={{ maxHeight: 250, overflowY: "auto" }}>
                 {availableUsers
-                  .filter(emp => emp.role === 'employee' || emp.role === 'manager')
-                  .map(employee => (
-                    <div key={employee._id || employee.id} className="employee-option">
-                      <input
-                        type="checkbox"
-                        id={`emp-${employee._id || employee.id}`}
-                        checked={selectedEmployees.includes(employee._id || employee.id)}
-                        onChange={() => handleEmployeeToggle(employee._id || employee.id)}
-                      />
-                      <label htmlFor={`emp-${employee._id || employee.id}`} style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                        <div 
-                          className="employee-avatar"
-                          style={{ backgroundColor: employee.avatarColor || '#40c3d8' }}
-                        >
-                          {employee.name?.charAt(0) || 'E'}
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: '600' }}>{employee.name}</div>
-                          <small style={{ color: '#666' }}>{employee.role} • {employee.department}</small>
-                        </div>
-                      </label>
-                    </div>
-                  ))}
+                  .filter((emp) => emp.role === "employee" || emp.role === "manager")
+                  .map((employee) => {
+                    const id = employee._id || employee.id;
+                    return (
+                      <div key={id} className="employee-option">
+                        <input
+                          type="checkbox"
+                          id={`emp-${id}`}
+                          checked={selectedEmployees.includes(id)}
+                          onChange={() => handleEmployeeToggle(id)}
+                          disabled={loading}
+                        />
+                        <label htmlFor={`emp-${id}`} style={{ display: "flex", alignItems: "center", width: "100%" }}>
+                          <div className="employee-avatar" style={{ backgroundColor: employee.avatarColor || "#40c3d8" }}>
+                            {employee.name?.charAt(0) || "E"}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 600 }}>{employee.name}</div>
+                            <small style={{ color: "#666" }}>
+                              {employee.role} • {employee.department}
+                            </small>
+                          </div>
+                        </label>
+                      </div>
+                    );
+                  })}
               </div>
-              
+
               {selectedEmployees.length > 0 && (
-                <div style={{ marginTop: '10px', fontSize: '14px', color: '#666' }}>
-                  Selected: {selectedEmployees.length} employee{selectedEmployees.length !== 1 ? 's' : ''}
+                <div style={{ marginTop: 10, fontSize: 14, color: "#666" }}>
+                  Selected: {selectedEmployees.length} employee{selectedEmployees.length !== 1 ? "s" : ""}
                 </div>
               )}
             </div>
           )}
 
-          <div className="modal-actions">
+          <div className="modal-actions" style={{ display: "flex", alignItems: "center", gap: 12 }}>
             {isManager && isEditing && (
-              <button
-                type="button"
-                className="btn-danger"
-                onClick={() => onDelete(shift._id)}
-                disabled={loading}
-              >
-                Delete Shift
+              <button type="button" className="btn-danger" onClick={handleDeleteClick} disabled={loading}>
+                {loading ? "Deleting..." : "Delete Shift"}
               </button>
             )}
-            
+
             <div style={{ flex: 1 }} />
-            
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={onClose}
-              disabled={loading}
-            >
+
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={loading}>
               Cancel
             </button>
-            
+
             {isManager && (
               <button
                 type="submit"
                 className="btn-primary"
                 disabled={loading || !formData.title || !formData.startTime || !formData.endTime}
               >
-                {loading ? 'Saving...' : isEditing ? 'Update Shift' : 'Create Shift'}
+                {loading ? (isEditing ? "Updating..." : "Saving...") : isEditing ? "Update Shift" : "Create Shift"}
               </button>
             )}
           </div>
