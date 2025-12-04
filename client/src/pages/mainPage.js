@@ -1,3 +1,4 @@
+// src/pages/MainPage.js
 import React, { useState, useEffect, useCallback } from "react";
 import "./mainPage.css";
 import { useAuth } from "../contexts/AuthContext";
@@ -7,272 +8,291 @@ import moment from "moment";
 
 export default function MainPage() {
   const { user, logout, isManager, isAdmin } = useAuth();
+
+  // State
   const [days, setDays] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedShift, setSelectedShift] = useState(null);
   const [filter, setFilter] = useState("all");
-  const [currentWeek, setCurrentWeek] = useState(moment());
+  const [currentWeek, setCurrentWeek] = useState(() => moment().startOf("isoWeek"));
   const [error, setError] = useState(null);
   const [availableUsers, setAvailableUsers] = useState([]);
   const [isDayMode, setIsDayMode] = useState(false);
 
+  // Helper to clear error (pass to modal)
+  const clearError = () => setError(null);
+
+  // Fetch available users (managers only)
   const fetchAvailableUsers = useCallback(async () => {
     try {
       const response = await shiftService.getAvailableUsers();
-      if (response.data.success) {
-        setAvailableUsers(response.data.data);
+      if (response?.data?.success) {
+        setAvailableUsers(response.data.data || []);
       }
-    } catch (error) {
-      console.error('Error fetching available users:', error);
+    } catch (err) {
+      console.error("fetchAvailableUsers error:", err?.message || err);
     }
   }, []);
 
-  const fetchShifts = useCallback(async () => {
-  try {
-    setLoading(true);
-    setError(null);
-    
-    // Format the date properly for the API
-    const weekStart = moment(currentWeek).startOf('week').format('YYYY-MM-DD');
-    const response = await shiftService.getShiftsByWeek(weekStart);
-    
-    if (response.data.success) {
-      // The API returns data as an object with date keys
-      const shiftsData = response.data.data;
-      
-      // Create days array for the week (Monday to Friday)
-      const weekDays = [];
-      const startOfWeek = moment(currentWeek).startOf('week');
-      
-      for (let i = 0; i < 5; i++) { // Monday to Friday
-        const day = moment(startOfWeek).add(i, 'days');
-        const dayKey = day.format('YYYY-MM-DD');
-        
-        // shiftsData is an object with date keys (from API response)
-        // Example: { "2025-12-01": [shift1, shift2], "2025-12-02": [...] }
-        const dayShifts = shiftsData[dayKey] || [];
-        
-        // Filter by department if needed
-        let filteredShifts = dayShifts;
-        if (filter === 'my' && user?.department) {
-          filteredShifts = dayShifts.filter(shift => 
-            shift.department === user.department
-          );
-        }
-        
-        // Calculate totals for the day
-        const totalHours = filteredShifts.reduce((sum, shift) => {
-          const start = moment(shift.startTime);
-          const end = moment(shift.endTime);
-          const duration = end.diff(start, 'hours', true);
-          return sum + duration;
-        }, 0);
-        
-        const totalCost = filteredShifts.reduce((sum, shift) => {
-          const start = moment(shift.startTime);
-          const end = moment(shift.endTime);
-          const duration = end.diff(start, 'hours', true);
-          const rate = shift.hourlyRate || 0;
-          const employees = shift.requiredEmployees || 1;
-          return sum + (duration * rate * employees);
-        }, 0);
-        
-        weekDays.push({
-          label: day.format('ddd').toUpperCase(),
-          day: day.date(),
-          date: day.toDate(),
-          dateString: dayKey,
-          shifts: filteredShifts,
-          totalHours: Math.round(totalHours * 10) / 10,
-          totalCost: Math.round(totalCost * 100) / 100
-        });
-      }
-      
-      setDays(weekDays);
-      
-      // Debug log to see what we received
-      console.log('Shifts by week response:', response.data);
-      console.log('Processed week days:', weekDays);
-    } else {
-      setError('Failed to load shifts');
-    }
-  } catch (error) {
-    console.error('Error fetching shifts:', error);
-    console.error('Error details:', error.response?.data);
-    setError('Failed to load shifts. Please try again.');
-  } finally {
-    setLoading(false);
-  }
-}, [currentWeek, filter, user]);
+  // Fetch shifts for the week that starts on monday (isoWeek)
+  const fetchShifts = useCallback(
+    async (weekMoment = currentWeek) => {
+      setLoading(true);
+      setError(null);
 
+      try {
+        const monday = moment(weekMoment).startOf("isoWeek");
+        const weekStart = monday.format("YYYY-MM-DD");
+
+        const response = await shiftService.getShiftsByWeek(weekStart);
+
+        if (!response?.data?.success) {
+          setDays([]);
+          setError(response?.data?.message || "Failed to load shifts");
+          return;
+        }
+
+        const shiftsData = response.data.data || {};
+
+        const weekDays = [];
+        for (let i = 0; i < 5; i++) {
+          const dayMoment = moment(monday).add(i, "days");
+          const dayKey = dayMoment.format("YYYY-MM-DD");
+          const dayShifts = Array.isArray(shiftsData[dayKey]) ? shiftsData[dayKey] : [];
+
+          // Apply department filter if requested
+          let filteredShifts = dayShifts;
+          if (filter === "my" && user?.department) {
+            filteredShifts = dayShifts.filter((s) => s.department === user.department);
+          }
+
+          // Totals
+          const totalHours = filteredShifts.reduce((acc, shift) => {
+            const start = moment(shift.startTime);
+            const end = moment(shift.endTime);
+            const dur = Math.max(0, end.diff(start, "hours", true));
+            return acc + dur;
+          }, 0);
+
+          const totalCost = filteredShifts.reduce((acc, shift) => {
+            const start = moment(shift.startTime);
+            const end = moment(shift.endTime);
+            const dur = Math.max(0, end.diff(start, "hours", true));
+            const rate = Number(shift.hourlyRate) || 0;
+            const employees = Number(shift.requiredEmployees) || 1;
+            return acc + dur * rate * employees;
+          }, 0);
+
+          weekDays.push({
+            label: dayMoment.format("ddd").toUpperCase(),
+            day: dayMoment.date(),
+            date: dayMoment.toDate(),
+            dateString: dayKey,
+            shifts: filteredShifts,
+            totalHours: Math.round(totalHours * 10) / 10,
+            totalCost: Math.round(totalCost * 100) / 100,
+          });
+        }
+
+        setDays(weekDays);
+      } catch (err) {
+        console.error("fetchShifts error:", err);
+        setError("Failed to load shifts. Please try again.");
+        setDays([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [currentWeek, filter, user?.department]
+  );
+
+  // Initial load and when dependencies change
   useEffect(() => {
     fetchShifts();
-    if (isManager) {
-      fetchAvailableUsers();
-    }
+    if (isManager) fetchAvailableUsers();
   }, [fetchShifts, fetchAvailableUsers, isManager]);
 
+  // Shift handlers
   const handleShiftClick = (shift) => {
     setSelectedShift(shift);
     setIsDayMode(false);
     setModalOpen(true);
+    clearError();
   };
 
   const handleCreateShift = () => {
-    // Floating button - no pre-filled date
     setSelectedShift(null);
     setIsDayMode(false);
     setModalOpen(true);
+    clearError();
   };
 
   const handleDaySpecificCreate = (day) => {
-    // Create a new date object for the specific day
     const dayDate = moment(day.date);
-    
+    const start = dayDate.clone().set({ hour: 9, minute: 0, second: 0, millisecond: 0 });
+    const end = dayDate.clone().set({ hour: 17, minute: 0, second: 0, millisecond: 0 });
+
     setSelectedShift({
-      startTime: dayDate.set({ hour: 9, minute: 0, second: 0, millisecond: 0 }).toDate(),
-      endTime: dayDate.set({ hour: 17, minute: 0, second: 0, millisecond: 0 }).toDate(),
-      date: dayDate.format('YYYY-MM-DD'), // Explicitly set the date
-      department: user?.department || 'General'
+      startTime: start.toDate(),
+      endTime: end.toDate(),
+      date: dayDate.format("YYYY-MM-DD"),
+      department: user?.department || "General",
     });
+
     setIsDayMode(true);
     setModalOpen(true);
+    clearError();
   };
 
   const handleSaveShift = async (shiftData) => {
-  try {
     setError(null);
-    
-    console.log('Saving shift data:', shiftData);
-    
-    let response;
-    if (selectedShift && selectedShift._id) {
-      response = await shiftService.updateShift(selectedShift._id, shiftData);
-    } else {
-      response = await shiftService.createShift(shiftData);
-    }
-    
-    console.log('Save response:', response.data);
-    
-    // Close modal first
-    setModalOpen(false);
-    setSelectedShift(null);
-    setIsDayMode(false);
-    
-    // Navigate to the week of the created shift
-    if (shiftData.startTime) {
-      const shiftWeek = moment(shiftData.startTime);
-      setCurrentWeek(shiftWeek);
-      
-      // If we're navigating to a different week, the useEffect will trigger fetchShifts
-      // If we're staying on the same week, manually refetch
-      if (shiftWeek.isSame(currentWeek, 'week')) {
+
+    try {
+      let response;
+      if (selectedShift && selectedShift._id) {
+        response = await shiftService.updateShift(selectedShift._id, shiftData);
+      } else {
+        response = await shiftService.createShift(shiftData);
+      }
+
+      if (!response?.data?.success) {
+        throw new Error(response?.data?.message || "Failed to save shift");
+      }
+
+      // close modal and refresh view
+      setModalOpen(false);
+      setSelectedShift(null);
+      setIsDayMode(false);
+
+      const shiftDate = moment(shiftData.startTime);
+      const shiftMondayWeek = shiftDate.clone().startOf("isoWeek");
+      const currentMondayWeek = moment(currentWeek).clone().startOf("isoWeek");
+
+      if (!shiftMondayWeek.isSame(currentMondayWeek, "day")) {
+        setCurrentWeek(shiftMondayWeek);
+        // fetchShifts will run via effect when currentWeek updates
+      } else {
         await fetchShifts();
       }
-    } else {
-      // If no startTime, just refetch current week
-      await fetchShifts();
+    } catch (err) {
+      console.error("handleSaveShift error:", err);
+      const message = err?.response?.data?.message || err?.message || "Failed to save shift. Please try again.";
+      setError(message);
+      // keep modal open for user to retry
     }
-    
-  } catch (error) {
-    console.error('Error saving shift:', error);
-    const message = error.response?.data?.message || 'Failed to save shift. Please try again.';
-    setError(message);
-  }
-};
+  };
 
   const handleDeleteShift = async (shiftId) => {
-    if (window.confirm('Are you sure you want to delete this shift? This action cannot be undone.')) {
-      try {
-        await shiftService.deleteShift(shiftId);
-        setModalOpen(false);
-        setSelectedShift(null);
-        fetchShifts();
-      } catch (error) {
-        console.error('Error deleting shift:', error);
-        const message = error.response?.data?.message || 'Failed to delete shift. Please try again.';
-        setError(message);
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this shift? This action cannot be undone."
+    );
+    if (!confirmed) return;
+
+    setError(null);
+
+    try {
+      const response = await shiftService.deleteShift(shiftId);
+
+      if (!response?.data?.success) {
+        throw new Error(response?.data?.message || "Failed to delete shift");
       }
+
+      // Close modal and refresh
+      setModalOpen(false);
+      setSelectedShift(null);
+      await fetchShifts();
+    } catch (err) {
+      console.error("handleDeleteShift error:", err);
+      const message = err?.response?.data?.message || err?.message || "Failed to delete shift. Please try again.";
+      setError(message);
+      // Keep modal open so user can see the message
     }
   };
 
   const handleConfirmShift = async (shiftId) => {
+    setError(null);
     try {
       await shiftService.confirmShift(shiftId);
-      fetchShifts();
-    } catch (error) {
-      console.error('Error confirming shift:', error);
-      const message = error.response?.data?.message || 'Failed to confirm shift. Please try again.';
+      await fetchShifts();
+    } catch (err) {
+      console.error("handleConfirmShift error:", err);
+      const message = err?.response?.data?.message || err?.message || "Failed to confirm shift. Please try again.";
       setError(message);
     }
   };
 
+  // Week navigation - use functional updates and clone to avoid mutating moment in state
   const handlePreviousWeek = () => {
-    setCurrentWeek(moment(currentWeek).subtract(1, 'week'));
+    setCurrentWeek((prev) => moment(prev).clone().subtract(1, "week").startOf("isoWeek"));
   };
 
   const handleNextWeek = () => {
-    setCurrentWeek(moment(currentWeek).add(1, 'week'));
+    setCurrentWeek((prev) => moment(prev).clone().add(1, "week").startOf("isoWeek"));
   };
 
   const handleToday = () => {
-    setCurrentWeek(moment());
+    setCurrentWeek(moment().startOf("isoWeek"));
   };
 
-  const formatTime = (date) => {
-    return moment(date).format('HH:mm');
-  };
+  // Format helpers
+  const formatTime = (date) => moment(date).format("HH:mm");
 
   const formatDuration = (start, end) => {
-    const hours = moment(end).diff(moment(start), 'hours', true);
+    const hours = Math.max(0, moment(end).diff(moment(start), "hours", true));
     return `${Math.round(hours * 10) / 10}h`;
   };
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'published': return '#40c3d8';
-      case 'draft': return '#ff9800';
-      case 'cancelled': return '#ccc';
-      case 'completed': return '#4CAF50';
-      default: return '#40c3d8';
+      case "published":
+        return "#40c3d8";
+      case "draft":
+        return "#ff9800";
+      case "cancelled":
+        return "#ccc";
+      case "completed":
+        return "#4CAF50";
+      default:
+        return "#40c3d8";
     }
   };
 
+  // Sidebar renderer
   const renderSidebar = () => {
     if (!user) return null;
-    
+
     return (
       <aside className="sidebar">
         <div className="logo">Coral LAB</div>
         <nav>
           <button className="active">Shifts</button>
-          
-          {/* Only show Employees tab for managers and admins */}
+
           {(isManager || isAdmin) && (
-            <button onClick={() => window.location.href = '/employees'}>Employees</button>
+            <button onClick={() => (window.location.href = "/employees")}>Employees</button>
           )}
-          
-          {/* Only show Reports tab for managers and admins */}
+
           {(isManager || isAdmin) && (
-            <button onClick={() => window.location.href = '/reports'}>Reports</button>
+            <button onClick={() => (window.location.href = "/reports")}>Reports</button>
           )}
-          
-          {/* Only show Settings tab for admins */}
+
           {isAdmin && (
-            <button onClick={() => window.location.href = '/settings'}>Settings</button>
+            <button onClick={() => (window.location.href = "/settings")}>Settings</button>
           )}
-          
-          <button onClick={logout} style={{ marginTop: 'auto' }}>Logout</button>
+
+          <button onClick={logout} style={{ marginTop: "auto" }}>
+            Logout
+          </button>
         </nav>
         <div className="profile">
           <div>{user?.name}</div>
-          <div style={{ fontSize: '12px', opacity: 0.7 }}>{user?.role}</div>
+          <div style={{ fontSize: "12px", opacity: 0.7 }}>{user?.role}</div>
         </div>
       </aside>
     );
   };
 
+  // Loading state (initial)
   if (loading && days.length === 0) {
     return (
       <div className="main-container">
@@ -284,62 +304,63 @@ export default function MainPage() {
     );
   }
 
+  // Render
   return (
     <div className="main-container">
-      {/* LEFT SIDEBAR */}
       {renderSidebar()}
 
-      
       <div className="content">
         <div className="top-bar">
           <div className="left">
             <button className="chip active">Shift view</button>
             <button className="chip">Staff view</button>
-            <button 
-              className={`chip ${filter === 'all' ? 'active' : ''}`} 
-              onClick={() => setFilter('all')}
-            >
+            <button className={`chip ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>
               Status: All
             </button>
-            <button 
-              className={`chip ${filter === 'my' ? 'active' : ''}`} 
-              onClick={() => setFilter('my')}
-            >
-              Team: {user?.department || 'All'}
+            <button className={`chip ${filter === "my" ? "active" : ""}`} onClick={() => setFilter("my")}>
+              Team: {user?.department || "All"}
             </button>
           </div>
+
           <div className="right">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <button className="chip" onClick={handlePreviousWeek}>←</button>
-              <button className="chip active" onClick={handleToday}>
-                {currentWeek.isSame(moment(), 'week') ? 'Current Week' : currentWeek.format('MMM D')}
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <button className="chip" onClick={handlePreviousWeek}>
+                ←
               </button>
-              <button className="chip" onClick={handleNextWeek}>→</button>
+              <button className="chip active" onClick={handleToday}>
+                {moment(currentWeek).isSame(moment(), "week") ? "Current Week" : moment(currentWeek).format("MMM D")}
+              </button>
+              <button className="chip" onClick={handleNextWeek}>
+                →
+              </button>
             </div>
           </div>
         </div>
 
+        {/* Global error (non-modal) */}
         {error && (
-          <div style={{
-            backgroundColor: '#FFE6E7',
-            color: '#EA454C',
-            padding: '12px 16px',
-            borderRadius: '8px',
-            marginBottom: '20px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center'
-          }}>
+          <div
+            style={{
+              backgroundColor: "#FFE6E7",
+              color: "#EA454C",
+              padding: "12px 16px",
+              borderRadius: "8px",
+              marginBottom: "20px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
             <span>{error}</span>
-            <button 
+            <button
               onClick={() => setError(null)}
               style={{
-                backgroundColor: 'transparent',
-                border: 'none',
-                color: '#EA454C',
-                cursor: 'pointer',
-                fontSize: '20px',
-                padding: '0 5px'
+                backgroundColor: "transparent",
+                border: "none",
+                color: "#EA454C",
+                cursor: "pointer",
+                fontSize: "20px",
+                padding: "0 5px",
               }}
             >
               ×
@@ -359,50 +380,56 @@ export default function MainPage() {
               </div>
 
               {d.shifts.length === 0 ? (
-                <div style={{
-                  textAlign: 'center',
-                  padding: '20px',
-                  color: '#999',
-                  fontSize: '14px',
-                  minHeight: '100px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
+                <div
+                  style={{
+                    textAlign: "center",
+                    padding: "20px",
+                    color: "#999",
+                    fontSize: "14px",
+                    minHeight: "100px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
                   No shifts scheduled
                 </div>
               ) : (
                 d.shifts.map((shift) => (
-                  <div 
-                    key={shift._id} 
+                  <div
+                    key={shift._id}
                     className="shift-card"
                     onClick={() => handleShiftClick(shift)}
-                    style={{ 
-                      cursor: 'pointer',
+                    style={{
+                      cursor: "pointer",
                       borderLeftColor: getStatusColor(shift.status),
-                      backgroundColor: shift.status === 'cancelled' ? '#f9f9f9' : '#f9f9fb',
-                      opacity: shift.status === 'cancelled' ? 0.7 : 1
+                      backgroundColor: shift.status === "cancelled" ? "#f9f9f9" : "#f9f9fb",
+                      opacity: shift.status === "cancelled" ? 0.7 : 1,
                     }}
                   >
                     <div className="time">
                       {formatTime(shift.startTime)} – {formatTime(shift.endTime)}
-                      {shift.status !== 'published' && (
-                        <span style={{
-                          marginLeft: '8px',
-                          fontSize: '11px',
-                          backgroundColor: getStatusColor(shift.status),
-                          color: 'white',
-                          padding: '2px 6px',
-                          borderRadius: '10px'
-                        }}>
+                      {shift.status !== "published" && (
+                        <span
+                          style={{
+                            marginLeft: "8px",
+                            fontSize: "11px",
+                            backgroundColor: getStatusColor(shift.status),
+                            color: "white",
+                            padding: "2px 6px",
+                            borderRadius: "10px",
+                          }}
+                        >
                           {shift.status}
                         </span>
                       )}
                     </div>
+
                     <div className="meta-row">
                       <span>{formatDuration(shift.startTime, shift.endTime)}</span>
-                      <span>${(shift.hourlyRate * shift.requiredEmployees).toFixed(2)}/hr</span>
+                      <span>${((Number(shift.hourlyRate) || 0) * (Number(shift.requiredEmployees) || 1)).toFixed(2)}/hr</span>
                     </div>
+
                     <div className="meta-row">
                       <span>{shift.confirmedCount || 0}/{shift.requiredEmployees} confirmed</span>
                       <span>{shift.department}</span>
@@ -411,83 +438,78 @@ export default function MainPage() {
                     {shift.employees && shift.employees.length > 0 && (
                       <div className="avatar-row">
                         {shift.employees.slice(0, 3).map((emp, index) => (
-                          <div 
-                            key={emp._id}
+                          <div
+                            key={emp._id || index}
                             className="avatar"
-                            style={{ 
-                              backgroundColor: emp.avatarColor || '#40c3d8',
+                            style={{
+                              backgroundColor: emp.avatarColor || "#40c3d8",
                               zIndex: 3 - index,
-                              position: 'relative'
+                              position: "relative",
                             }}
                             title={`${emp.name} (${emp.role})`}
                           >
-                            {emp.name?.charAt(0) || 'E'}
+                            {emp.name?.charAt(0) || "E"}
                           </div>
                         ))}
-                        {shift.employees.length > 3 && (
-                          <div className="avatar small" style={{ zIndex: 0 }}>
-                            +{shift.employees.length - 3}
-                          </div>
-                        )}
+                        {shift.employees.length > 3 && <div className="avatar small">+{shift.employees.length - 3}</div>}
                       </div>
                     )}
 
-                    {user && 
-                     shift.employees?.some(e => e._id === user.id) && 
-                     !shift.confirmedEmployees?.includes(user.id) && 
-                     shift.status === 'published' && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleConfirmShift(shift._id);
-                        }}
-                        style={{
-                          marginTop: '10px',
-                          padding: '6px 12px',
-                          backgroundColor: '#4CAF50',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          fontSize: '12px',
-                          fontWeight: '600',
-                          width: '100%',
-                          transition: 'background-color 0.2s'
-                        }}
-                        onMouseEnter={(e) => e.target.style.backgroundColor = '#45a049'}
-                        onMouseLeave={(e) => e.target.style.backgroundColor = '#4CAF50'}
-                      >
-                        Confirm Attendance
-                      </button>
-                    )}
+                    {user &&
+                      shift.employees?.some((e) => e._id === user.id) &&
+                      !shift.confirmedEmployees?.includes(user.id) &&
+                      shift.status === "published" && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleConfirmShift(shift._id);
+                          }}
+                          style={{
+                            marginTop: "10px",
+                            padding: "6px 12px",
+                            backgroundColor: "#4CAF50",
+                            color: "white",
+                            border: "none",
+                            borderRadius: "6px",
+                            cursor: "pointer",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            width: "100%",
+                            transition: "background-color 0.2s",
+                          }}
+                          onMouseEnter={(e) => (e.target.style.backgroundColor = "#45a049")}
+                          onMouseLeave={(e) => (e.target.style.backgroundColor = "#4CAF50")}
+                        >
+                          Confirm Attendance
+                        </button>
+                      )}
                   </div>
                 ))
               )}
 
-              {/* Only show Add Shift button for managers/admins */}
               {(isManager || isAdmin) && (
                 <button
                   onClick={() => handleDaySpecificCreate(d)}
                   style={{
-                    marginTop: '10px',
-                    padding: '10px',
-                    backgroundColor: '#f8f9fa',
-                    border: '2px dashed #dee2e6',
-                    borderRadius: '10px',
-                    cursor: 'pointer',
-                    width: '100%',
-                    fontSize: '14px',
-                    color: '#6c757d',
-                    fontWeight: '600',
-                    transition: 'all 0.2s'
+                    marginTop: "10px",
+                    padding: "10px",
+                    backgroundColor: "#f8f9fa",
+                    border: "2px dashed #dee2e6",
+                    borderRadius: "10px",
+                    cursor: "pointer",
+                    width: "100%",
+                    fontSize: "14px",
+                    color: "#6c757d",
+                    fontWeight: 600,
+                    transition: "all 0.2s",
                   }}
                   onMouseEnter={(e) => {
-                    e.target.style.backgroundColor = '#e9ecef';
-                    e.target.style.borderColor = '#adb5bd';
+                    e.target.style.backgroundColor = "#e9ecef";
+                    e.target.style.borderColor = "#adb5bd";
                   }}
                   onMouseLeave={(e) => {
-                    e.target.style.backgroundColor = '#f8f9fa';
-                    e.target.style.borderColor = '#dee2e6';
+                    e.target.style.backgroundColor = "#f8f9fa";
+                    e.target.style.borderColor = "#dee2e6";
                   }}
                 >
                   + Add Shift for {d.label}
@@ -498,34 +520,33 @@ export default function MainPage() {
         </div>
       </div>
 
-      {/* FLOATING BUTTON - Only for managers/admins */}
       {(isManager || isAdmin) && (
-        <button 
+        <button
           className="add-btn"
           onClick={handleCreateShift}
           style={{
-            position: 'fixed',
-            bottom: '25px',
-            right: '25px',
-            background: '#40c3d8',
-            border: 'none',
-            width: '60px',
-            height: '60px',
-            fontSize: '32px',
-            borderRadius: '50%',
-            color: 'white',
-            cursor: 'pointer',
-            boxShadow: '0 4px 15px rgba(64, 195, 216, 0.4)',
-            transition: 'all 0.3s',
-            zIndex: 100
+            position: "fixed",
+            bottom: "25px",
+            right: "25px",
+            background: "#40c3d8",
+            border: "none",
+            width: "60px",
+            height: "60px",
+            fontSize: "32px",
+            borderRadius: "50%",
+            color: "white",
+            cursor: "pointer",
+            boxShadow: "0 4px 15px rgba(64, 195, 216, 0.4)",
+            transition: "all 0.3s",
+            zIndex: 100,
           }}
           onMouseEnter={(e) => {
-            e.target.style.transform = 'scale(1.1)';
-            e.target.style.boxShadow = '0 6px 20px rgba(64, 195, 216, 0.6)';
+            e.target.style.transform = "scale(1.1)";
+            e.target.style.boxShadow = "0 6px 20px rgba(64, 195, 216, 0.6)";
           }}
           onMouseLeave={(e) => {
-            e.target.style.transform = 'scale(1)';
-            e.target.style.boxShadow = '0 4px 15px rgba(64, 195, 216, 0.4)';
+            e.target.style.transform = "scale(1)";
+            e.target.style.boxShadow = "0 4px 15px rgba(64, 195, 216, 0.4)";
           }}
           title="Create New Shift"
         >
@@ -542,8 +563,10 @@ export default function MainPage() {
             setModalOpen(false);
             setSelectedShift(null);
             setIsDayMode(false);
-            setError(null);
+            clearError();
           }}
+          error={error}
+          clearError={clearError}
           user={user}
           availableUsers={availableUsers}
           isDayMode={isDayMode}
