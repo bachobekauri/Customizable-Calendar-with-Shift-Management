@@ -8,6 +8,8 @@ import moment from 'moment';
 const ReportsPage = () => {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
+    const isManager = user?.role === 'manager' || user?.role === 'admin';
+    const isAdmin = user?.role === 'admin';
     const [reportData, setReportData] = useState({
         totalShifts: 0,
         totalHours: 0,
@@ -113,13 +115,37 @@ const ReportsPage = () => {
         <aside className="sidebar">
             <div className="logo">Coral LAB</div>
             <nav>
-                <button onClick={() => navigate('/main')}>Shifts</button>
-                <button onClick={() => navigate('/employees')}>Employees</button>
-                <button className="active">Reports</button>
-                {user?.role === 'admin' && (
-                    <button onClick={() => navigate('/settings')}>Settings</button>
+                <button onClick={() => navigate('/main')}>📅 Shifts</button>
+
+                {user?.role === 'employee' ? (
+                    <>
+                        <button onClick={() => navigate('/employees')}>👥 Team</button>
+                        <button onClick={() => navigate('/request-schedule')}>📋 Requests</button>
+                        <button onClick={() => navigate('/settings')}>⚙️ Settings</button>
+                    </>
+                ) : (
+                    <>
+                        {(isManager || isAdmin) && (
+                            <button onClick={() => navigate("/employees")}>👥 Employees</button>
+                        )}
+
+                        {(isManager || isAdmin) && (
+                            <button onClick={() => navigate("/requests")}>📨 Requests</button>
+                        )}
+
+                        {(isManager || isAdmin) && (
+                            <button className="active">📊 Reports</button>
+                        )}
+
+                        {isAdmin && (
+                            <button onClick={() => navigate("/settings")}>⚙️ Settings</button>
+                        )}
+                    </>
                 )}
-                <button onClick={logout} style={{ marginTop: 'auto' }}>Logout</button>
+
+                <button onClick={logout} style={{ marginTop: "auto" }}>
+                    🚪 Logout
+                </button>
             </nav>
             <div className="profile">
                 <div>{user?.name}</div>
@@ -144,8 +170,8 @@ const ReportsPage = () => {
             {renderSidebar()}
 
             <div className="content" style={{ overflowY: 'auto', height: '100%' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-                    <h1 style={{ margin: 0 }}>Reports & Analytics</h1>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', borderBottom: '1px solid #eee', paddingBottom: '20px' }}>
+                    <h1 style={{ margin: 0 }}>📊 Reports & Analytics</h1>
 
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                         <input

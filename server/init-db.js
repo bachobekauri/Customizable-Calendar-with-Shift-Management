@@ -1,154 +1,216 @@
 const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
+const fs = require('fs');
+const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
 
-const db = new sqlite3.Database('./shift_calendar.db', (err) => {
+const dbPath = path.join(__dirname, 'shift_calendar.db');
+
+// Create db directory if it doesn't exist
+const dbDir = path.dirname(dbPath);
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
+
+const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
-    console.error('Error opening database:', err.message);
+    console.error('❌ Database connection error:', err);
+    process.exit(1);
   } else {
-    console.log('Connected to SQLite database.');
+    console.log('✅ Connected to SQLite database');
   }
 });
 
-db.serialize(() => {
-  db.run(`DROP TABLE IF EXISTS shift_employees`);
-  db.run(`DROP TABLE IF EXISTS shifts`);
-  db.run(`DROP TABLE IF EXISTS users`);
+db.run('PRAGMA foreign_keys = ON');
 
-  db.run(`CREATE TABLE users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    role TEXT CHECK(role IN ('employee', 'manager', 'admin')) DEFAULT 'employee',
-    department TEXT DEFAULT 'General',
-    phone TEXT,
-    avatar_color TEXT DEFAULT '#40c3d8',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
+const runAsync = (sql, params = []) => {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function(err) {
+      if (err) reject(err);
+      else resolve({ id: this.lastID, changes: this.changes });
+    });
+  });
+};
 
-  db.run(`CREATE TABLE shifts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    description TEXT,
-    start_time DATETIME NOT NULL,
-    end_time DATETIME NOT NULL,
-    required_employees INTEGER DEFAULT 1,
-    department TEXT DEFAULT 'General',
-    status TEXT CHECK(status IN ('draft', 'published', 'cancelled', 'completed')) DEFAULT 'published',
-    hourly_rate REAL DEFAULT 20.0,
-    location TEXT DEFAULT 'Main Office',
-    created_by INTEGER NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (created_by) REFERENCES users(id)
-  )`);
+const initializeDatabase = async () => {
+  try {
+    console.log('\n📊 Initializing database schema...\n');
 
-  db.run(`CREATE TABLE shift_employees (
-    shift_id INTEGER NOT NULL,
-    employee_id INTEGER NOT NULL,
-    confirmed BOOLEAN DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (shift_id, employee_id),
-    FOREIGN KEY (shift_id) REFERENCES shifts(id) ON DELETE CASCADE,
-    FOREIGN KEY (employee_id) REFERENCES users(id) ON DELETE CASCADE
-  )`);
+    // Users table
+    await runAsync(`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        role TEXT DEFAULT 'employee' CHECK(role IN ('employee', 'manager', 'admin')),
+        department TEXT DEFAULT 'General',
+        avatar_color TEXT DEFAULT '#40c3d8',
+        phone TEXT,
+        is_active BOOLEAN DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ Created users table');
 
-  console.log('Tables created successfully.');
+    // Shifts table
+    await runAsync(`
+      CREATE TABLE IF NOT EXISTS shifts (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT,
+        start_time DATETIME NOT NULL,
+        end_time DATETIME NOT NULL,
+        department TEXT DEFAULT 'General',
+        required_employees INTEGER DEFAULT 1,
+        hourly_rate REAL DEFAULT 20.0,
+        location TEXT DEFAULT 'Main Office',
+        status TEXT DEFAULT 'published' CHECK(status IN ('draft', 'published', 'completed', 'cancelled')),
+        created_by TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(created_by) REFERENCES users(id)
+      )
+    `);
+    console.log('✅ Created shifts table');
 
-  db.run(`CREATE INDEX idx_shifts_start_time ON shifts(start_time)`);
-  db.run(`CREATE INDEX idx_shifts_department ON shifts(department)`);
-  db.run(`CREATE INDEX idx_shifts_status ON shifts(status)`);
-  db.run(`CREATE INDEX idx_shift_employees_shift_id ON shift_employees(shift_id)`);
-  db.run(`CREATE INDEX idx_shift_employees_employee_id ON shift_employees(employee_id)`);
-  db.run(`CREATE INDEX idx_users_email ON users(email)`);
-  db.run(`CREATE INDEX idx_users_role ON users(role)`);
+    // Shift employees junction table
+    await runAsync(`
+      CREATE TABLE IF NOT EXISTS shift_employees (
+        id TEXT PRIMARY KEY,
+        shift_id TEXT NOT NULL,
+        employee_id TEXT NOT NULL,
+        confirmed BOOLEAN DEFAULT 0,
+        confirmed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(shift_id) REFERENCES shifts(id) ON DELETE CASCADE,
+        FOREIGN KEY(employee_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE(shift_id, employee_id)
+      )
+    `);
+    console.log('✅ Created shift_employees table');
 
-  console.log('Indexes created successfully.');
+    // Shift requests table
+    await runAsync(`
+      CREATE TABLE IF NOT EXISTS shift_requests (
+        id TEXT PRIMARY KEY,
+        shift_id TEXT NOT NULL,
+        request_type TEXT NOT NULL CHECK(request_type IN ('swap', 'cancel', 'change')),
+        status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected', 'cancelled')),
+        reason TEXT,
+        requested_by TEXT NOT NULL,
+        assigned_to TEXT,
+        reviewed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(shift_id) REFERENCES shifts(id) ON DELETE CASCADE,
+        FOREIGN KEY(requested_by) REFERENCES users(id),
+        FOREIGN KEY(assigned_to) REFERENCES users(id)
+      )
+    `);
+    console.log('✅ Created shift_requests table');
 
-  const defaultPassword = bcrypt.hashSync('admin123', 10);
-  db.run(
-    `INSERT INTO users (name, email, password, role, department, avatar_color) 
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    ['Admin User', 'admin@example.com', defaultPassword, 'admin', 'Management', '#EA454C'],
-    function(err) {
-      if (err) {
-        console.error('Error inserting admin user:', err.message);
-      } else {
-        console.log('Admin user created with ID:', this.lastID);
-      }
-    }
-  );
+    // Notifications table
+    await runAsync(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT,
+        related_id TEXT,
+        read_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+    console.log('✅ Created notifications table');
 
-  const managerPassword = bcrypt.hashSync('manager123', 10);
-  db.run(
-    `INSERT INTO users (name, email, password, role, department, avatar_color) 
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    ['Manager User', 'manager@example.com', managerPassword, 'manager', 'Operations', '#40c3d8'],
-    function(err) {
-      if (err) {
-        console.error('Error inserting manager user:', err.message);
-      } else {
-        console.log('Manager user created with ID:', this.lastID);
-      }
-    }
-  );
+    // Audit logs table
+    await runAsync(`
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        action TEXT NOT NULL,
+        resource_type TEXT,
+        resource_id TEXT,
+        details TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(user_id) REFERENCES users(id)
+      )
+    `);
+    console.log('✅ Created audit_logs table');
 
-  const employeePassword = bcrypt.hashSync('employee123', 10);
-  db.run(
-    `INSERT INTO users (name, email, password, role, department, avatar_color) 
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    ['Employee User', 'employee@example.com', employeePassword, 'employee', 'General', '#4CAF50'],
-    function(err) {
-      if (err) {
-        console.error('Error inserting employee user:', err.message);
-      } else {
-        console.log('Employee user created with ID:', this.lastID);
-      }
-    }
-  );
+    // Create indexes for better query performance
+    await runAsync(`CREATE INDEX IF NOT EXISTS idx_shifts_start_time ON shifts(start_time)`);
+    await runAsync(`CREATE INDEX IF NOT EXISTS idx_shift_employees_shift ON shift_employees(shift_id)`);
+    await runAsync(`CREATE INDEX IF NOT EXISTS idx_shift_employees_employee ON shift_employees(employee_id)`);
+    await runAsync(`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id)`);
+    await runAsync(`CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read_at)`);
+    await runAsync(`CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id)`);
+    await runAsync(`CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action)`);
+    console.log('✅ Created database indexes');
 
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  tomorrow.setHours(9, 0, 0, 0);
-  
-  const endTime = new Date(tomorrow);
-  endTime.setHours(17, 0, 0, 0);
+    // Check if demo data already exists
+    const checkUser = new Promise((resolve) => {
+      db.get('SELECT COUNT(*) as count FROM users', (err, result) => {
+        resolve(!err && result.count > 0);
+      });
+    });
 
-  db.run(
-    `INSERT INTO shifts (title, description, start_time, end_time, required_employees, department, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ['Morning Shift', 'Regular morning operations', tomorrow.toISOString(), endTime.toISOString(), 3, 'General', 2],
-    function(err) {
-      if (err) {
-        console.error('Error inserting sample shift:', err.message);
-      } else {
-        console.log('Sample shift created with ID:', this.lastID);
-        
-        db.run(
-          `INSERT INTO shift_employees (shift_id, employee_id, confirmed)
-           VALUES (?, ?, 0)`,
-          [this.lastID, 3],
-          function(err) {
-            if (err) {
-              console.error('Error assigning employee to shift:', err.message);
-            } else {
-              console.log('Employee assigned to shift');
-            }
-          }
+    const hasUsers = await checkUser;
+
+    if (!hasUsers) {
+      console.log('\n👤 Creating demo users...\n');
+
+      // Create demo admin user
+      const adminId = uuidv4();
+      const adminPassword = await bcrypt.hash('password123', 10);
+      await runAsync(
+        `INSERT INTO users (id, name, email, password, role, department, avatar_color)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [adminId, 'System Admin', 'admin@example.com', adminPassword, 'admin', 'General', '#EA454C']
+      );
+      console.log('✅ Created admin user: admin@example.com (password: password123)');
+
+      // Create demo manager user
+      const managerId = uuidv4();
+      const managerPassword = await bcrypt.hash('password123', 10);
+      await runAsync(
+        `INSERT INTO users (id, name, email, password, role, department, avatar_color)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [managerId, 'Project Manager', 'manager@example.com', managerPassword, 'manager', 'Sales', '#1976d2']
+      );
+      console.log('✅ Created manager user: manager@example.com (password: password123)');
+
+      // Create demo employee users
+      for (let i = 1; i <= 3; i++) {
+        const empId = uuidv4();
+        const empPassword = await bcrypt.hash('password123', 10);
+        const departments = ['Sales', 'Development', 'Support'];
+        await runAsync(
+          `INSERT INTO users (id, name, email, password, role, department, avatar_color)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [empId, `Employee ${i}`, `employee${i}@example.com`, empPassword, 'employee', departments[i - 1], '#40c3d8']
         );
+        console.log(`✅ Created employee ${i}: employee${i}@example.com (password: password123)`);
       }
-    }
-  );
-});
 
-db.close((err) => {
-  if (err) {
-    console.error('Error closing database:', err.message);
-  } else {
-    console.log('Database initialization complete.');
-    console.log('\n=== DEFAULT LOGIN CREDENTIALS ===');
-    console.log('Admin:     admin@example.com / admin123');
-    console.log('Manager:   manager@example.com / manager123');
-    console.log('Employee:  employee@example.com / employee123');
-    console.log('===================================');
+      console.log('\n');
+    } else {
+      console.log('ℹ️  Users already exist - skipping demo data creation');
+    }
+
+    console.log('\n✨ Database initialization complete!\n');
+    db.close();
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error initializing database:', error);
+    db.close();
+    process.exit(1);
   }
-});
+};
+
+// Run initialization
+initializeDatabase();

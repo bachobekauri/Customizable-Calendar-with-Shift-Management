@@ -5,9 +5,11 @@ import { useAuth } from "../contexts/AuthContext";
 import { shiftService } from "../services/api";
 import ShiftModal from "../components/ShiftModal";
 import moment from "moment";
+import { useNavigate } from "react-router-dom";
 
 export default function MainPage() {
   const { user, logout, isManager, isAdmin } = useAuth();
+  const navigate = useNavigate();
 
   // State
   const [days, setDays] = useState([]);
@@ -19,6 +21,9 @@ export default function MainPage() {
   const [error, setError] = useState(null);
   const [availableUsers, setAvailableUsers] = useState([]);
   const [isDayMode, setIsDayMode] = useState(false);
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [requestType, setRequestType] = useState('swap');
+  const [requestReason, setRequestReason] = useState('');
 
   // Helper to clear error (pass to modal)
   const clearError = () => setError(null);
@@ -61,9 +66,16 @@ export default function MainPage() {
           const dayKey = dayMoment.format("YYYY-MM-DD");
           const dayShifts = Array.isArray(shiftsData[dayKey]) ? shiftsData[dayKey] : [];
 
-          // Apply department filter if requested
+          // For employees: only show shifts they're assigned to
           let filteredShifts = dayShifts;
-          if (filter === "my" && user?.department) {
+          if (!isManager && !isAdmin && user?.id) {
+            filteredShifts = dayShifts.filter(shift => 
+              shift.employees && shift.employees.some(emp => 
+                emp._id === user.id || emp.id === user.id || emp === user.id
+              )
+            );
+          } else if (filter === "my" && user?.department) {
+            // For managers: filter by department
             filteredShifts = dayShifts.filter((s) => s.department === user.department);
           }
 
@@ -104,17 +116,24 @@ export default function MainPage() {
         setLoading(false);
       }
     },
-    [currentWeek, filter, user?.department]
+    [currentWeek, filter, user?.department, user?.id, isManager, isAdmin]
   );
 
   // Initial load and when dependencies change
   useEffect(() => {
     fetchShifts();
-    if (isManager) fetchAvailableUsers();
-  }, [fetchShifts, fetchAvailableUsers, isManager]);
+    if (isManager || isAdmin) fetchAvailableUsers();
+  }, [fetchShifts, fetchAvailableUsers, isManager, isAdmin]);
 
   // Shift handlers
   const handleShiftClick = (shift) => {
+    // Employees can't edit shifts, only request changes
+    if (!isManager && !isAdmin) {
+      setSelectedShift(shift);
+      setShowRequestModal(true);
+      return;
+    }
+    
     setSelectedShift(shift);
     setIsDayMode(false);
     setModalOpen(true);
@@ -222,6 +241,47 @@ export default function MainPage() {
     }
   };
 
+  const handleSubmitRequest = async () => {
+    if (!selectedShift || !requestReason.trim()) {
+      alert('Please fill in all fields');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      const requestBody = {
+        requestType,
+        shiftId: selectedShift.id || selectedShift._id,
+        reason: requestReason
+      };
+
+      const response = await fetch(
+        `${process.env.REACT_APP_API_URL || 'http://localhost:5000/api'}/requests`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestBody)
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to submit request');
+      }
+
+      alert('Request submitted successfully!');
+      setShowRequestModal(false);
+      setSelectedShift(null);
+      setRequestType('swap');
+      setRequestReason('');
+    } catch (error) {
+      alert('Error: ' + error.message);
+    }
+  };
+
   // Week navigation - use functional updates and clone to avoid mutating moment in state
   const handlePreviousWeek = () => {
     setCurrentWeek((prev) => moment(prev).clone().subtract(1, "week").startOf("isoWeek"));
@@ -266,22 +326,36 @@ export default function MainPage() {
       <aside className="sidebar">
         <div className="logo">Coral LAB</div>
         <nav>
-          <button className="active">Shifts</button>
+          <button className="active">📅 Shifts</button>
 
-          {(isManager || isAdmin) && (
-            <button onClick={() => (window.location.href = "/employees")}>Employees</button>
-          )}
+          {user.role === 'employee' ? (
+            <>
+              <button onClick={() => navigate('/employees')}>👥 Team</button>
+              <button onClick={() => navigate('/request-schedule')}>📋 Requests</button>
+              <button onClick={() => navigate('/settings')}>⚙️ Settings</button>
+            </>
+          ) : (
+            <>
+              {(isManager || isAdmin) && (
+                <button onClick={() => navigate("/employees")}>👥 Employees</button>
+              )}
 
-          {(isManager || isAdmin) && (
-            <button onClick={() => (window.location.href = "/reports")}>Reports</button>
-          )}
+              {(isManager || isAdmin) && (
+                <button onClick={() => navigate("/requests")}>📨 Requests</button>
+              )}
 
-          {isAdmin && (
-            <button onClick={() => (window.location.href = "/settings")}>Settings</button>
+              {(isManager || isAdmin) && (
+                <button onClick={() => navigate("/reports")}>📊 Reports</button>
+              )}
+
+              {isAdmin && (
+                <button onClick={() => navigate("/settings")}>⚙️ Settings</button>
+              )}
+            </>
           )}
 
           <button onClick={logout} style={{ marginTop: "auto" }}>
-            Logout
+            🚪 Logout
           </button>
         </nav>
         <div className="profile">
@@ -313,13 +387,17 @@ export default function MainPage() {
         <div className="top-bar">
           <div className="left">
             <button className="chip active">Shift view</button>
-            <button className="chip">Staff view</button>
-            <button className={`chip ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>
-              Status: All
-            </button>
-            <button className={`chip ${filter === "my" ? "active" : ""}`} onClick={() => setFilter("my")}>
-              Team: {user?.department || "All"}
-            </button>
+            {(isManager || isAdmin) && <button className="chip">Staff view</button>}
+            {(isManager || isAdmin) && (
+              <>
+                <button className={`chip ${filter === "all" ? "active" : ""}`} onClick={() => setFilter("all")}>
+                  Status: All
+                </button>
+                <button className={`chip ${filter === "my" ? "active" : ""}`} onClick={() => setFilter("my")}>
+                  Team: {user?.department || "All"}
+                </button>
+              </>
+            )}
           </div>
 
           <div className="right">
@@ -572,6 +650,170 @@ export default function MainPage() {
           isDayMode={isDayMode}
         />
       )}
+
+      {/* REQUEST MODAL FOR EMPLOYEES */}
+      {showRequestModal && selectedShift && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '500px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            {/* HEADER */}
+            <div style={{
+              padding: '20px 30px',
+              borderBottom: '1px solid #eee',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexShrink: 0
+            }}>
+              <h2 style={{ margin: 0, fontSize: '18px' }}>Request Change</h2>
+              <button
+                onClick={() => {
+                  setShowRequestModal(false);
+                  setSelectedShift(null);
+                  setRequestType('swap');
+                  setRequestReason('');
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '28px',
+                  cursor: 'pointer',
+                  color: '#999',
+                  padding: '0',
+                  lineHeight: '1'
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            {/* CONTENT */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '30px', paddingRight: '20px' }}>
+              <div style={{ marginBottom: '20px' }}>
+                <strong>Shift:</strong>
+                <div style={{ color: '#666', marginTop: '4px', fontSize: '14px' }}>
+                  {selectedShift.title}
+                  <br />
+                  {moment(selectedShift.start_time || selectedShift.startTime).format('MMM DD, YYYY HH:mm')} - {moment(selectedShift.end_time || selectedShift.endTime).format('HH:mm')}
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '14px' }}>
+                  Type of Request
+                </label>
+                <select
+                  value={requestType}
+                  onChange={(e) => setRequestType(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #ddd',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    backgroundColor: 'white',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  <option value="swap">🔄 Swap with another employee</option>
+                  <option value="change">✏️ Change shift time</option>
+                  <option value="cancel">❌ Cancel this shift</option>
+                </select>
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '14px' }}>
+                  Reason <span style={{ color: '#e74c3c' }}>*</span>
+                </label>
+                <textarea
+                  value={requestReason}
+                  onChange={(e) => setRequestReason(e.target.value)}
+                  placeholder="Why are you requesting this change?"
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #ddd',
+                    borderRadius: '6px',
+                    fontFamily: 'inherit',
+                    fontSize: '14px',
+                    minHeight: '100px',
+                    boxSizing: 'border-box',
+                    resize: 'vertical'
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* FOOTER */}
+            <div style={{
+              padding: '20px 30px',
+              borderTop: '1px solid #eee',
+              display: 'flex',
+              gap: '10px',
+              flexShrink: 0,
+              backgroundColor: '#fafafa'
+            }}>
+              <button
+                onClick={handleSubmitRequest}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  backgroundColor: '#40c3d8',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  fontSize: '14px'
+                }}
+              >
+                Submit Request
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowRequestModal(false);
+                  setSelectedShift(null);
+                  setRequestType('swap');
+                  setRequestReason('');
+                }}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  backgroundColor: '#f5f5f5',
+                  color: '#333',
+                  border: '1px solid #ddd',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  fontSize: '14px'
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
+} 

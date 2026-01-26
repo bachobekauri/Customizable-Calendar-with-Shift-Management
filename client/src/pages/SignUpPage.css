@@ -28,26 +28,7 @@
     text-align: center;
 }
 
-.roleSelector {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 25px;
-}
 
-.roleBtn {
-    padding: 8px 15px;
-    border-radius: 10px;
-    border: 1px solid #999;
-    background: white;
-    cursor: pointer;
-    font-family: Poppins;
-}
-
-.roleBtn.active {
-    background: #EA454C;
-    color: white;
-    border-color: #EA454C;
-}
 
 .inputField {
     width: 310px;
