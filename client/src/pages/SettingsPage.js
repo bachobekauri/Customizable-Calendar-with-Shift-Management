@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
 const SettingsPage = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, isManager, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [settings, setSettings] = useState({
     companyName: 'Coral LAB',
@@ -19,30 +19,52 @@ const SettingsPage = () => {
     alert('Settings saved successfully!');
   };
 
-  const renderSidebar = () => (
-    <aside className="sidebar">
-      <div className="logo">{settings.companyName}</div>
-      <nav>
-        <button onClick={() => navigate('/main')}>Shifts</button>
-        <button onClick={() => navigate('/employees')}>Employees</button>
-        <button onClick={() => navigate('/reports')}>Reports</button>
-        <button className="active">Settings</button>
-        <button onClick={logout} style={{ marginTop: 'auto' }}>Logout</button>
-      </nav>
-      <div className="profile">
-        <div>{user?.name}</div>
-        <div style={{ fontSize: '12px', opacity: 0.7 }}>{user?.role}</div>
-      </div>
-    </aside>
-  );
-
   return (
     <div className="main-container">
-      {renderSidebar()}
+      <aside className="sidebar">
+        <div className="logo">Coral LAB</div>
+        <nav>
+          <button onClick={() => navigate('/main')}>📅 Shifts</button>
+
+          {user?.role === 'employee' ? (
+            <>
+              <button onClick={() => navigate('/employees')}>👥 Team</button>
+              <button onClick={() => navigate('/request-schedule')}>📋 Requests</button>
+              <button className="active">⚙️ Settings</button>
+            </>
+          ) : (
+            <>
+              {(isManager || isAdmin) && (
+                <button onClick={() => navigate("/employees")}>👥 Employees</button>
+              )}
+
+              {(isManager || isAdmin) && (
+                <button onClick={() => navigate("/requests")}>📨 Requests</button>
+              )}
+
+              {(isManager || isAdmin) && (
+                <button onClick={() => navigate("/reports")}>📊 Reports</button>
+              )}
+
+              {isAdmin && (
+                <button className="active">⚙️ Settings</button>
+              )}
+            </>
+          )}
+
+          <button onClick={logout} style={{ marginTop: "auto" }}>
+            🚪 Logout
+          </button>
+        </nav>
+        <div className="profile">
+          <div>{user?.name}</div>
+          <div style={{ fontSize: '12px', opacity: 0.7 }}>{user?.role}</div>
+        </div>
+      </aside>
 
       <div className="content">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-          <h1 style={{ margin: 0 }}>System Settings</h1>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', borderBottom: '1px solid #eee', paddingBottom: '20px' }}>
+          <h1 style={{ margin: 0 }}>⚙️ System Settings</h1>
           <button
             onClick={handleSave}
             style={{

@@ -1,265 +1,77 @@
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
-
-const api = axios.create({
-  baseURL: API_URL,
+// Create axios instance with base URL
+const API = axios.create({
+  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5000/api',
   headers: {
     'Content-Type': 'application/json'
-  },
-  timeout: 10000 
+  }
 });
 
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    console.error('Request error:', error);
-    return Promise.reject(error);
+// Add request interceptor to attach token
+API.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
-);
+  return config;
+});
 
-api.interceptors.response.use(
-  (response) => {
-    return response;
-  },
+// Add response interceptor to handle errors
+API.interceptors.response.use(
+  (response) => response,
   (error) => {
-    if (error.response) {
-      const { status, data } = error.response;
-      
-      switch (status) {
-        case 401:
-          // Clear storage and redirect to login
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-          window.location.href = '/';
-          break;
-          
-        case 403:
-          console.error('Forbidden:', data.message || 'Access denied');
-          break;
-          
-        case 404:
-          console.error('Not found:', data.message || 'Resource not found');
-          break;
-          
-        case 400:
-          console.error('Bad request:', data.message || 'Invalid request');
-          break;
-          
-        case 500:
-          console.error('Server error:', data.message || 'Internal server error');
-          break;
-          
-        default:
-          console.error('Error:', data.message || 'An error occurred');
-      }
-    } else if (error.request) {
-      console.error('No response received:', error.request);
-    } else {
-      console.error('Request setup error:', error.message);
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/';
     }
-    
     return Promise.reject(error);
   }
 );
 
 export const authService = {
-  login: async (email, password) => {
-    try {
-      const response = await api.post('/auth/login', { email, password });
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
-  
-  register: async (userData) => {
-    try {
-      const response = await api.post('/auth/register', userData);
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
-  
-  getMe: async () => {
-    try {
-      const response = await api.get('/auth/me');
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
-  
-  logout: () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-  }
+  register: (userData) => API.post('/auth/register', userData),
+  login: (email, password) => API.post('/auth/login', { email, password }),
+  getMe: () => API.get('/auth/me')
 };
 
-// Shift services
-export const shiftService = {
-  getShifts: async (params) => {
-    try {
-      const response = await api.get('/shifts', { params });
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
-  
-  getShift: async (id) => {
-    try {
-      const response = await api.get(`/shifts/${id}`);
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
-  
-  createShift: async (shiftData) => {
-    try {
-      const response = await api.post('/shifts', shiftData);
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
-  
-  updateShift: async (id, shiftData) => {
-    try {
-      const response = await api.put(`/shifts/${id}`, shiftData);
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
-  
-  deleteShift: async (id) => {
-    try {
-      const response = await api.delete(`/shifts/${id}`);
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
-  
-  getShiftsByWeek: async (date) => {
-    try {
-      const response = await api.get(`/shifts/week/${date}`);
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
-  
-  confirmShift: async (id) => {
-    try {
-      const response = await api.post(`/shifts/${id}/confirm`);
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
-  
-  getAvailableUsers: async () => {
-    try {
-      const response = await api.get('/shifts/users/available');
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  }
-};
-
-// User services
 export const userService = {
-  getUsers: async () => {
-    try {
-      const response = await api.get('/users');
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
-  
-  getUser: async (id) => {
-    try {
-      const response = await api.get(`/users/${id}`);
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
-  
-  updateUser: async (id, userData) => {
-    try {
-      const response = await api.put(`/users/${id}`, userData);
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
-  
-  deleteUser: async (id) => {
-    try {
-      const response = await api.delete(`/users/${id}`);
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
-  
-  getEmployees: async () => {
-    try {
-      const response = await api.get('/employees');
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
-  
-  getEmployee: async (id) => {
-    try {
-      const response = await api.get(`/employees/${id}`);
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
-  
-  getEmployeeShifts: async (id, params) => {
-    try {
-      const response = await api.get(`/employees/${id}/shifts`, { params });
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
-  
-  updateEmployee: async (id, employeeData) => {
-    try {
-      const response = await api.put(`/employees/${id}`, employeeData);
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  },
-  
-  deleteEmployee: async (id) => {
-    try {
-      const response = await api.delete(`/employees/${id}`);
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  }
+  getUsers: () => API.get('/users'),
+  getUser: (id) => API.get(`/users/${id}`),
+  updateUser: (id, userData) => API.put(`/users/${id}`, userData),
+  deleteUser: (id) => API.delete(`/users/${id}`)
 };
 
-export default api;
+export const shiftService = {
+  getShifts: (params) => API.get('/shifts', { params }),
+  getShift: (id) => API.get(`/shifts/${id}`),
+  createShift: (shiftData) => API.post('/shifts', shiftData),
+  updateShift: (id, shiftData) => API.put(`/shifts/${id}`, shiftData),
+  deleteShift: (id) => API.delete(`/shifts/${id}`),
+  getShiftsByWeek: (date) => API.get(`/shifts/week/${date}`),
+  confirmShift: (id) => API.post(`/shifts/${id}/confirm`),
+  getAvailableUsers: () => API.get('/shifts/users/available')
+};
+
+export const requestService = {
+  getRequests: (params) => API.get('/requests', { params }),
+  createRequest: (requestData) => API.post('/requests', requestData),
+  approveRequest: (id, data) => API.post(`/requests/${id}/approve`, data),
+  rejectRequest: (id, data) => API.post(`/requests/${id}/reject`, data),
+  cancelRequest: (id) => API.post(`/requests/${id}/cancel`),
+  getAvailableReplacements: (shiftId) => API.get(`/requests/shift/${shiftId}/available`)
+};
+
+export const notificationService = {
+  getNotifications: () => API.get('/notifications'),
+  markAsRead: (id) => API.put(`/notifications/${id}/read`),
+  markAllAsRead: () => API.put('/notifications/read-all'),
+  deleteNotification: (id) => API.delete(`/notifications/${id}`)
+};
+
+export const auditService = {
+  getAuditLogs: (params) => API.get('/audit-logs', { params })
+};
+
+export default API;

@@ -12,6 +12,7 @@ const auth = require('./routes/auth');
 const shifts = require('./routes/shifts');
 const users = require('./routes/users');
 const employees = require('./routes/employees');
+const requests = require('./routes/requests');  // ← ADD THIS LINE
 
 const app = express();
 
@@ -32,10 +33,12 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
+// Routes
 app.use('/api/auth', auth);
 app.use('/api/shifts', shifts);
 app.use('/api/users', users);
 app.use('/api/employees', employees);
+app.use('/api/requests', requests);  // ← ADD THIS LINE
 
 app.get('/api/health', (req, res) => {
   res.json({ 
@@ -63,7 +66,19 @@ app.use((err, req, res, next) => {
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: `Cannot ${req.method} ${req.url}`
+    message: `Cannot ${req.method} ${req.url}`,
+    availableRoutes: [
+      'POST /api/auth/register',
+      'POST /api/auth/login',
+      'GET /api/shifts',
+      'POST /api/shifts',
+      'GET /api/users',
+      'GET /api/employees',
+      'GET /api/requests',  // ← New route
+      'POST /api/requests',  // ← New route
+      'POST /api/requests/:id/approve',  // ← New route
+      'POST /api/requests/:id/reject',  // ← New route
+    ]
   });
 });
 
@@ -73,6 +88,17 @@ const server = app.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
   console.log(`API available at http://localhost:${PORT}/api`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
+  console.log('Routes configured:');
+  console.log('  ✓ POST /api/auth/register');
+  console.log('  ✓ POST /api/auth/login');
+  console.log('  ✓ GET  /api/shifts');
+  console.log('  ✓ POST /api/shifts');
+  console.log('  ✓ GET  /api/users');
+  console.log('  ✓ GET  /api/employees');
+  console.log('  ✓ GET  /api/requests');  // ← New
+  console.log('  ✓ POST /api/requests');  // ← New
+  console.log('  ✓ POST /api/requests/:id/approve');  // ← New
+  console.log('  ✓ POST /api/requests/:id/reject');  // ← New
 });
 
 process.on('unhandledRejection', (err, promise) => {
