@@ -34,7 +34,7 @@ const runAsync = (sql, params = []) => {
 
 const initializeDatabase = async () => {
   try {
-    console.log('\n📊 Initializing database schema...\n');
+    console.log('\n📋 Initializing database schema...\n');
 
     // Users table
     await runAsync(`
@@ -91,7 +91,7 @@ const initializeDatabase = async () => {
     `);
     console.log('✅ Created shift_employees table');
 
-    // Shift requests table
+    // Shift requests table - COMPLETE WITH ALL COLUMNS
     await runAsync(`
       CREATE TABLE IF NOT EXISTS shift_requests (
         id TEXT PRIMARY KEY,
@@ -101,12 +101,17 @@ const initializeDatabase = async () => {
         reason TEXT,
         requested_by TEXT NOT NULL,
         assigned_to TEXT,
+        replacement_employee_id TEXT,
+        proposed_start_time DATETIME,
+        proposed_end_time DATETIME,
+        rejection_reason TEXT,
         reviewed_at DATETIME,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(shift_id) REFERENCES shifts(id) ON DELETE CASCADE,
         FOREIGN KEY(requested_by) REFERENCES users(id),
-        FOREIGN KEY(assigned_to) REFERENCES users(id)
+        FOREIGN KEY(assigned_to) REFERENCES users(id),
+        FOREIGN KEY(replacement_employee_id) REFERENCES users(id)
       )
     `);
     console.log('✅ Created shift_requests table');
@@ -146,6 +151,9 @@ const initializeDatabase = async () => {
     await runAsync(`CREATE INDEX IF NOT EXISTS idx_shifts_start_time ON shifts(start_time)`);
     await runAsync(`CREATE INDEX IF NOT EXISTS idx_shift_employees_shift ON shift_employees(shift_id)`);
     await runAsync(`CREATE INDEX IF NOT EXISTS idx_shift_employees_employee ON shift_employees(employee_id)`);
+    await runAsync(`CREATE INDEX IF NOT EXISTS idx_shift_requests_shift ON shift_requests(shift_id)`);
+    await runAsync(`CREATE INDEX IF NOT EXISTS idx_shift_requests_requested_by ON shift_requests(requested_by)`);
+    await runAsync(`CREATE INDEX IF NOT EXISTS idx_shift_requests_status ON shift_requests(status)`);
     await runAsync(`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id)`);
     await runAsync(`CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read_at)`);
     await runAsync(`CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id)`);
@@ -203,6 +211,12 @@ const initializeDatabase = async () => {
     }
 
     console.log('\n✨ Database initialization complete!\n');
+    console.log('✅ shift_requests table created with all required columns:');
+    console.log('   - id, shift_id, request_type, status, reason');
+    console.log('   - requested_by, assigned_to, replacement_employee_id');
+    console.log('   - proposed_start_time, proposed_end_time');
+    console.log('   - rejection_reason, reviewed_at, created_at, updated_at\n');
+    
     db.close();
     process.exit(0);
   } catch (error) {
