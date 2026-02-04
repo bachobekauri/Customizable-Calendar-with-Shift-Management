@@ -20,6 +20,8 @@ const EmployeeEditPage = () => {
     totalEarnings: 0
   });
 
+  
+
   const fetchEmployeeData = useCallback(async () => {
     try {
       setLoading(true);
@@ -34,7 +36,7 @@ const EmployeeEditPage = () => {
         role: employeeData.role,
         department: employeeData.department,
         phone: employeeData.phone || '',
-        avatarColor: employeeData.avatarColor || '#40c3d8'
+        avatarColor: employeeData.avatarcolor || '#164a52'
       });
       
       

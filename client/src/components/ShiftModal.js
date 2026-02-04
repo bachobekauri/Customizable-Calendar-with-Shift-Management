@@ -29,12 +29,10 @@ const ShiftModal = ({
   const isManager = user?.role === "manager" || user?.role === "admin";
   const isDaySpecific = isDayMode && !isEditing;
 
-  // local validation error (client-side)
   const [validationError, setValidationError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [selectedEmployees, setSelectedEmployees] = useState([]);
 
-  // formData stores ISO-ish strings for datetime-local inputs or 'YYYY-MM-DDTHH:mm' format
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -48,7 +46,6 @@ const ShiftModal = ({
     employees: [],
   });
 
-  // Helper: normalize incoming shift dates into 'YYYY-MM-DDTHH:mm' strings
   const normalizeShiftToForm = (s) => {
     const safeStart = s?.startTime ? moment(s.startTime).local() : null;
     const safeEnd = s?.endTime ? moment(s.endTime).local() : null;
@@ -66,19 +63,15 @@ const ShiftModal = ({
     };
   };
 
-  // Initialize form when shift changes
   useEffect(() => {
     setValidationError(null);
     clearError();
 
     if (isEditing) {
-      // editing existing shift
       const normalized = normalizeShiftToForm(shift || {});
       setFormData(normalized);
       setSelectedEmployees(normalized.employees || []);
     } else if (shift && isDaySpecific) {
-      // new day-specific shift: shift may contain date info (shift.startTime used by MainPage)
-      // If shift.startTime exists and is a date object / ISO string, extract date part and set default times.
       const dateMoment = shift?.startTime ? moment(shift.startTime).local() : moment().local();
       const dateStr = dateMoment.format("YYYY-MM-DD");
       setFormData((prev) => ({
@@ -89,12 +82,10 @@ const ShiftModal = ({
       }));
       setSelectedEmployees([]);
     } else if (shift) {
-      // If shift is provided but not day-specific, use its times (useful when parent pre-fills)
       const normalized = normalizeShiftToForm(shift);
       setFormData(normalized);
       setSelectedEmployees(normalized.employees || []);
     } else {
-      // fresh create
       const today = moment().local().format("YYYY-MM-DD");
       setFormData({
         title: "",
@@ -110,10 +101,8 @@ const ShiftModal = ({
       });
       setSelectedEmployees([]);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shift, isDayMode, user?.department, isEditing]);
 
-  // Local helpers
   const handleEmployeeToggle = (id) => {
     setSelectedEmployees((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
@@ -142,10 +131,8 @@ const ShiftModal = ({
     return Math.round(hours * rate * req * 100) / 100;
   };
 
-  // When user edits time inputs for day-specific mode: keep date part
   const handleTimeChange = (field, timeValue) => {
     if (isDaySpecific) {
-      // extract date from existing startTime (or today)
       const date = formData.startTime ? moment(formData.startTime).format("YYYY-MM-DD") : moment().format("YYYY-MM-DD");
       setFormData((prev) => ({ ...prev, [field]: `${date}T${timeValue}` }));
     } else {
@@ -153,43 +140,37 @@ const ShiftModal = ({
     }
   };
 
-  // Submit handler
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setValidationError(null);
-    clearError();
-    setLoading(true);
+  e.preventDefault();
+  setValidationError(null);
+  clearError();
+  setLoading(true);
 
-    try {
-      // basic validation
-      if (!formData.title?.trim()) throw new Error("Please enter a title.");
-      if (!formData.startTime || !formData.endTime) throw new Error("Please provide start and end times.");
+  try {
+    if (!formData.title?.trim()) throw new Error("Please enter a title.");
+    if (!formData.startTime || !formData.endTime) throw new Error("Please provide start and end times.");
 
-      const start = moment(formData.startTime);
-      const end = moment(formData.endTime);
+    const start = moment(formData.startTime);
+    const end = moment(formData.endTime);
 
-      if (!start.isValid() || !end.isValid()) throw new Error("Invalid date/time format.");
-      if (!end.isAfter(start)) throw new Error("End time must be after start time.");
+    if (!start.isValid() || !end.isValid()) throw new Error("Invalid date/time format.");
+    if (!end.isAfter(start)) throw new Error("End time must be after start time.");
 
-      // prepare payload
-      const payload = {
-        ...formData,
-        startTime: start.toISOString(),
-        endTime: end.toISOString(),
-        employees: selectedEmployees,
-      };
+    const payload = {
+      ...formData,
+      startTime: start.local().format(), // Keep as local time with offset
+      endTime: end.local().format(),     // Keep as local time with offset
+      employees: selectedEmployees,
+    };
 
-      // call parent onSave (await it so modal can show loading)
-      await onSave(payload);
-      // parent will close modal on success (per MainPage behavior)
-    } catch (err) {
-      // if parent returned an axios style error, show message if present
-      const message = err?.response?.data?.message || err?.message || String(err);
-      setValidationError(message);
-    } finally {
-      setLoading(false);
-    }
-  };
+    await onSave(payload);
+  } catch (err) {
+    const message = err?.response?.data?.message || err?.message || String(err);
+    setValidationError(message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Delete wrapper to show loading while parent handles confirm and deletion
   const handleDeleteClick = async () => {
