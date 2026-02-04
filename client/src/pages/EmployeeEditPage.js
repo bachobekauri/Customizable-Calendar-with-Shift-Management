@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import './mainPage.css';
 import { useAuth } from '../contexts/AuthContext';
-import { userService, shiftService } from '../services/api';
+import { userService, shiftService} from '../services/api';
 import { useNavigate, useParams } from 'react-router-dom';
 import moment from 'moment';
 
@@ -19,6 +19,8 @@ const EmployeeEditPage = () => {
     totalHours: 0,
     totalEarnings: 0
   });
+
+  
 
   
 
@@ -46,9 +48,12 @@ const EmployeeEditPage = () => {
       });
       
       const allShifts = shiftsResponse.data.data || [];
+
+ 
       const employeeShifts = allShifts.filter(shift => 
-        shift.employees?.some(e => e._id === id)
+         shift.employees?.some(e => e._id === id)
       );
+
       
       setEmployeeShifts(employeeShifts);
       
@@ -499,10 +504,11 @@ const EmployeeEditPage = () => {
                         </td>
                         <td style={{ padding: '12px' }}>
                           <span style={{
-                            color: shift.confirmed ? '#4CAF50' : '#ff9800',
+                            color: shift.confirmedEmployees?.includes(id) ? '#4CAF50' : '#ff9800',
                             fontWeight: '500'
                           }}>
-                            {shift.confirmed ? '✓ Confirmed' : 'Pending'}
+                            
+                            {shift.confirmedEmployees?.includes(id) ? '✓ Confirmed' : 'Pending'}
                           </span>
                         </td>
                       </tr>
