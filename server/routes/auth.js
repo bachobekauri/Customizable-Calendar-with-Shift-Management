@@ -4,7 +4,6 @@ const { body, validationResult } = require('express-validator');
 const { register, login, getMe } = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware.js');
 
-// Validation rules
 const registerValidation = [
   body('name').trim().notEmpty().withMessage('Name is required'),
   body('email').isEmail().normalizeEmail().withMessage('Please provide a valid email'),

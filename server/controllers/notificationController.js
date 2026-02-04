@@ -1,3 +1,4 @@
+
 const db = require('../db');
 const { v4: uuidv4 } = require('uuid');
 
@@ -10,7 +11,7 @@ exports.getNotifications = async (req, res) => {
   try {
     const notifications = await db.allAsync(
       `SELECT * FROM notifications 
-       WHERE user_id = ? 
+       WHERE user_id = $1 
        ORDER BY created_at DESC 
        LIMIT 50`,
       [req.user.id]
@@ -18,14 +19,14 @@ exports.getNotifications = async (req, res) => {
     
     const unreadCount = await db.getAsync(
       `SELECT COUNT(*) as count FROM notifications 
-       WHERE user_id = ? AND read_at IS NULL`,
+       WHERE user_id = $1 AND read_at IS NULL`,
       [req.user.id]
     );
     
     res.json({
       success: true,
       count: notifications.length,
-      unreadCount: unreadCount?.count || 0,
+      unreadCount: parseInt(unreadCount?.count) || 0,
       data: notifications
     });
   } catch (error) {
@@ -43,7 +44,7 @@ exports.getNotifications = async (req, res) => {
 exports.markAsRead = async (req, res) => {
   try {
     const notification = await db.getAsync(
-      'SELECT * FROM notifications WHERE id = ? AND user_id = ?',
+      'SELECT * FROM notifications WHERE id = $1 AND user_id = $2',
       [req.params.id, req.user.id]
     );
     
@@ -55,12 +56,12 @@ exports.markAsRead = async (req, res) => {
     }
     
     await db.runAsync(
-      'UPDATE notifications SET read_at = datetime("now") WHERE id = ?',
+      'UPDATE notifications SET read_at = NOW() WHERE id = $1',
       [req.params.id]
     );
     
     const updated = await db.getAsync(
-      'SELECT * FROM notifications WHERE id = ?',
+      'SELECT * FROM notifications WHERE id = $1',
       [req.params.id]
     );
     
@@ -83,7 +84,7 @@ exports.markAsRead = async (req, res) => {
 exports.markAllAsRead = async (req, res) => {
   try {
     await db.runAsync(
-      'UPDATE notifications SET read_at = datetime("now") WHERE user_id = ? AND read_at IS NULL',
+      'UPDATE notifications SET read_at = NOW() WHERE user_id = $1 AND read_at IS NULL',
       [req.user.id]
     );
     
@@ -106,7 +107,7 @@ exports.markAllAsRead = async (req, res) => {
 exports.deleteNotification = async (req, res) => {
   try {
     const notification = await db.getAsync(
-      'SELECT * FROM notifications WHERE id = ? AND user_id = ?',
+      'SELECT * FROM notifications WHERE id = $1 AND user_id = $2',
       [req.params.id, req.user.id]
     );
     
@@ -118,7 +119,7 @@ exports.deleteNotification = async (req, res) => {
     }
     
     await db.runAsync(
-      'DELETE FROM notifications WHERE id = ?',
+      'DELETE FROM notifications WHERE id = $1',
       [req.params.id]
     );
     
@@ -134,4 +135,3 @@ exports.deleteNotification = async (req, res) => {
     });
   }
 };
-

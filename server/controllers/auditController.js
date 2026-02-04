@@ -1,3 +1,4 @@
+
 // ==================== AUDIT LOGS ====================
 
 // @desc    Get audit logs
@@ -22,20 +23,24 @@ exports.getAuditLogs = async (req, res) => {
     `;
     
     const params = [];
+    let paramIndex = 1;
     
     if (startDate && endDate) {
-      query += ` AND al.created_at >= ? AND al.created_at <= ?`;
+      query += ` AND al.created_at >= $${paramIndex} AND al.created_at <= $${paramIndex + 1}`;
       params.push(startDate, endDate);
+      paramIndex += 2;
     }
     
     if (action) {
-      query += ` AND al.action = ?`;
+      query += ` AND al.action = $${paramIndex}`;
       params.push(action);
+      paramIndex++;
     }
     
     if (userId) {
-      query += ` AND al.user_id = ?`;
+      query += ` AND al.user_id = $${paramIndex}`;
       params.push(userId);
+      paramIndex++;
     }
     
     query += ` ORDER BY al.created_at DESC LIMIT 1000`;

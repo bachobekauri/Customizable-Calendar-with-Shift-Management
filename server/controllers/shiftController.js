@@ -1,3 +1,4 @@
+
 const db = require('../db');
 
 const formatShift = (shift) => {
@@ -34,20 +35,24 @@ exports.getShifts = async (req, res) => {
       WHERE 1=1
     `;
     const params = [];
+    let paramIndex = 1;
 
     if (startDate && endDate) {
-      query += ` AND s.start_time >= ? AND s.start_time <= ?`;
+      query += ` AND s.start_time >= $${paramIndex} AND s.start_time <= $${paramIndex + 1}`;
       params.push(startDate, endDate);
+      paramIndex += 2;
     }
 
     if (department && department !== 'all') {
-      query += ` AND s.department = ?`;
+      query += ` AND s.department = $${paramIndex}`;
       params.push(department);
+      paramIndex++;
     }
 
     if (status && status !== 'all') {
-      query += ` AND s.status = ?`;
+      query += ` AND s.status = $${paramIndex}`;
       params.push(status);
+      paramIndex++;
     }
 
     if (req.user.role === 'employee') {
@@ -55,10 +60,11 @@ exports.getShifts = async (req, res) => {
         AND s.id IN (
           SELECT shift_id 
           FROM shift_employees 
-          WHERE employee_id = ?
+          WHERE employee_id = $${paramIndex}
         )
       `;
       params.push(req.user.id);
+      paramIndex++;
     }
 
     query += ` ORDER BY s.start_time ASC`;
@@ -72,11 +78,11 @@ exports.getShifts = async (req, res) => {
                   se.confirmed
            FROM shift_employees se
            JOIN users u ON se.employee_id = u.id
-           WHERE se.shift_id = ?`,
+           WHERE se.shift_id = $1`,
           [shift.id]
         );
 
-        const confirmedEmployees = employees.filter(emp => emp.confirmed === 1);
+        const confirmedEmployees = employees.filter(emp => emp.confirmed === true);
 
         return {
           ...formatShift(shift),
@@ -120,7 +126,7 @@ exports.getShift = async (req, res) => {
               u.role as created_by_role
        FROM shifts s
        LEFT JOIN users u ON s.created_by = u.id
-       WHERE s.id = ?`,
+       WHERE s.id = $1`,
       [req.params.id]
     );
 
@@ -136,11 +142,11 @@ exports.getShift = async (req, res) => {
               se.confirmed
        FROM shift_employees se
        JOIN users u ON se.employee_id = u.id
-       WHERE se.shift_id = ?`,
+       WHERE se.shift_id = $1`,
       [shift.id]
     );
 
-    const confirmedEmployees = employees.filter(emp => emp.confirmed === 1);
+    const confirmedEmployees = employees.filter(emp => emp.confirmed === true);
 
     const shiftWithEmployees = {
       ...formatShift(shift),
@@ -207,7 +213,7 @@ exports.createShift = async (req, res) => {
       `INSERT INTO shifts (
         title, description, start_time, end_time, required_employees,
         department, status, hourly_rate, location, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
       [
         title,
         description || '',
@@ -225,8 +231,9 @@ exports.createShift = async (req, res) => {
     if (employees.length > 0) {
       for (const employeeId of employees) {
         await db.runAsync(
-          `INSERT OR IGNORE INTO shift_employees (shift_id, employee_id, confirmed)
-           VALUES (?, ?, 0)`,
+          `INSERT INTO shift_employees (shift_id, employee_id, confirmed)
+           VALUES ($1, $2, FALSE)
+           ON CONFLICT (shift_id, employee_id) DO NOTHING`,
           [result.id, employeeId]
         );
       }
@@ -238,7 +245,7 @@ exports.createShift = async (req, res) => {
               u.email as created_by_email
        FROM shifts s
        LEFT JOIN users u ON s.created_by = u.id
-       WHERE s.id = ?`,
+       WHERE s.id = $1`,
       [result.id]
     );
 
@@ -247,11 +254,11 @@ exports.createShift = async (req, res) => {
               se.confirmed
        FROM shift_employees se
        JOIN users u ON se.employee_id = u.id
-       WHERE se.shift_id = ?`,
+       WHERE se.shift_id = $1`,
       [result.id]
     );
 
-    const confirmedEmployees = shiftEmployees.filter(emp => emp.confirmed === 1);
+    const confirmedEmployees = shiftEmployees.filter(emp => emp.confirmed === true);
 
     const shiftWithEmployees = {
       ...formatShift(shift),
@@ -286,7 +293,7 @@ exports.createShift = async (req, res) => {
 exports.updateShift = async (req, res) => {
   try {
     const shift = await db.getAsync(
-      'SELECT * FROM shifts WHERE id = ?',
+      'SELECT * FROM shifts WHERE id = $1',
       [req.params.id]
     );
 
@@ -330,16 +337,16 @@ exports.updateShift = async (req, res) => {
 
     await db.runAsync(
       `UPDATE shifts SET
-        title = COALESCE(?, title),
-        description = COALESCE(?, description),
-        start_time = COALESCE(?, start_time),
-        end_time = COALESCE(?, end_time),
-        required_employees = COALESCE(?, required_employees),
-        department = COALESCE(?, department),
-        status = COALESCE(?, status),
-        hourly_rate = COALESCE(?, hourly_rate),
-        location = COALESCE(?, location)
-       WHERE id = ?`,
+        title = COALESCE($1, title),
+        description = COALESCE($2, description),
+        start_time = COALESCE($3, start_time),
+        end_time = COALESCE($4, end_time),
+        required_employees = COALESCE($5, required_employees),
+        department = COALESCE($6, department),
+        status = COALESCE($7, status),
+        hourly_rate = COALESCE($8, hourly_rate),
+        location = COALESCE($9, location)
+       WHERE id = $10`,
       [
         title || shift.title,
         description || shift.description,
@@ -356,15 +363,16 @@ exports.updateShift = async (req, res) => {
 
     if (employees && Array.isArray(employees)) {
       await db.runAsync(
-        'DELETE FROM shift_employees WHERE shift_id = ?',
+        'DELETE FROM shift_employees WHERE shift_id = $1',
         [req.params.id]
       );
 
       if (employees.length > 0) {
         for (const employeeId of employees) {
           await db.runAsync(
-            `INSERT OR IGNORE INTO shift_employees (shift_id, employee_id, confirmed)
-             VALUES (?, ?, 0)`,
+            `INSERT INTO shift_employees (shift_id, employee_id, confirmed)
+             VALUES ($1, $2, FALSE)
+             ON CONFLICT (shift_id, employee_id) DO NOTHING`,
             [req.params.id, employeeId]
           );
         }
@@ -377,7 +385,7 @@ exports.updateShift = async (req, res) => {
               u.email as created_by_email
        FROM shifts s
        LEFT JOIN users u ON s.created_by = u.id
-       WHERE s.id = ?`,
+       WHERE s.id = $1`,
       [req.params.id]
     );
 
@@ -386,11 +394,11 @@ exports.updateShift = async (req, res) => {
               se.confirmed
        FROM shift_employees se
        JOIN users u ON se.employee_id = u.id
-       WHERE se.shift_id = ?`,
+       WHERE se.shift_id = $1`,
       [req.params.id]
     );
 
-    const confirmedEmployees = shiftEmployees.filter(emp => emp.confirmed === 1);
+    const confirmedEmployees = shiftEmployees.filter(emp => emp.confirmed === true);
 
     const shiftWithEmployees = {
       ...formatShift(updatedShift),
@@ -425,7 +433,7 @@ exports.updateShift = async (req, res) => {
 exports.deleteShift = async (req, res) => {
   try {
     const shift = await db.getAsync(
-      'SELECT * FROM shifts WHERE id = ?',
+      'SELECT * FROM shifts WHERE id = $1',
       [req.params.id]
     );
 
@@ -444,7 +452,7 @@ exports.deleteShift = async (req, res) => {
 }
 
 
-    await db.runAsync('DELETE FROM shifts WHERE id = ?', [req.params.id]);
+    await db.runAsync('DELETE FROM shifts WHERE id = $1', [req.params.id]);
 
     res.json({
       success: true,
@@ -468,21 +476,16 @@ exports.getShiftsByWeek = async (req, res) => {
     
     const date = req.params.date || new Date().toISOString().split('T')[0];
     
-    // Parse the input date
     const inputDate = new Date(date + 'T00:00:00.000Z');
     
-    // Get the day of week (0 = Sunday, 1 = Monday, etc.)
     const dayOfWeek = inputDate.getUTCDay();
     
-    // Calculate days to Monday (if Sunday, go back 6 days; if Monday, 0 days; etc.)
     const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
     
-    // Set to Monday of the week
     const monday = new Date(inputDate);
     monday.setUTCDate(inputDate.getUTCDate() - daysToMonday);
     monday.setUTCHours(0, 0, 0, 0);
     
-    // Set to Friday of the week
     const friday = new Date(monday);
     friday.setUTCDate(monday.getUTCDate() + 4);
     friday.setUTCHours(23, 59, 59, 999);
@@ -498,21 +501,22 @@ exports.getShiftsByWeek = async (req, res) => {
              u.email as created_by_email
       FROM shifts s
       LEFT JOIN users u ON s.created_by = u.id
-      WHERE s.start_time >= ? 
-        AND s.start_time <= ?
+      WHERE s.start_time >= $1 
+        AND s.start_time <= $2
     `;
     const params = [monday.toISOString(), friday.toISOString()];
+    let paramIndex = 3;
 
-    // If employee, only show their shifts
     if (req.user.role === 'employee') {
       query += `
         AND s.id IN (
           SELECT shift_id 
           FROM shift_employees 
-          WHERE employee_id = ?
+          WHERE employee_id = $${paramIndex}
         )
       `;
       params.push(req.user.id);
+      paramIndex++;
     }
 
     query += ` ORDER BY s.start_time ASC`;
@@ -521,7 +525,6 @@ exports.getShiftsByWeek = async (req, res) => {
     
     console.log(`Found ${shifts.length} shifts for the week`);
 
-    // Get employees for each shift
     const shiftsWithEmployees = await Promise.all(
       shifts.map(async (shift) => {
         const employees = await db.allAsync(
@@ -529,11 +532,11 @@ exports.getShiftsByWeek = async (req, res) => {
                   se.confirmed
            FROM shift_employees se
            JOIN users u ON se.employee_id = u.id
-           WHERE se.shift_id = ?`,
+           WHERE se.shift_id = $1`,
           [shift.id]
         );
 
-        const confirmedEmployees = employees.filter(emp => emp.confirmed === 1);
+        const confirmedEmployees = employees.filter(emp => emp.confirmed === true);
 
         return {
           ...formatShift(shift),
@@ -551,10 +554,8 @@ exports.getShiftsByWeek = async (req, res) => {
       })
     );
 
-    // Group shifts by day (YYYY-MM-DD format)
     const shiftsByDay = {};
     
-    // Initialize all weekdays
     for (let i = 0; i < 5; i++) {
       const day = new Date(monday);
       day.setUTCDate(monday.getUTCDate() + i);
@@ -562,7 +563,6 @@ exports.getShiftsByWeek = async (req, res) => {
       shiftsByDay[dayKey] = [];
     }
     
-    // Add shifts to their respective days
     shiftsWithEmployees.forEach(shift => {
       const shiftDate = new Date(shift.startTime);
       const dayKey = shiftDate.toISOString().split('T')[0];
@@ -601,7 +601,7 @@ exports.confirmShift = async (req, res) => {
       `SELECT se.* 
        FROM shift_employees se
        JOIN shifts s ON se.shift_id = s.id
-       WHERE se.shift_id = ? AND se.employee_id = ?`,
+       WHERE se.shift_id = $1 AND se.employee_id = $2`,
       [req.params.id, req.user.id]
     );
 
@@ -613,7 +613,7 @@ exports.confirmShift = async (req, res) => {
     }
 
     const shift = await db.getAsync(
-      'SELECT * FROM shifts WHERE id = ?',
+      'SELECT * FROM shifts WHERE id = $1',
       [req.params.id]
     );
 
@@ -624,7 +624,7 @@ exports.confirmShift = async (req, res) => {
       });
     }
 
-    if (assignment.confirmed === 1) {
+    if (assignment.confirmed === true) {
       return res.status(400).json({
         success: false,
         message: 'Already confirmed for this shift'
@@ -632,7 +632,7 @@ exports.confirmShift = async (req, res) => {
     }
 
     await db.runAsync(
-      'UPDATE shift_employees SET confirmed = 1 WHERE shift_id = ? AND employee_id = ?',
+      'UPDATE shift_employees SET confirmed = TRUE WHERE shift_id = $1 AND employee_id = $2',
       [req.params.id, req.user.id]
     );
 

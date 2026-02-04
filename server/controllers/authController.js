@@ -1,3 +1,4 @@
+
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
@@ -46,7 +47,7 @@ exports.register = async (req, res) => {
     }
 
     const userExists = await db.getAsync(
-      'SELECT id FROM users WHERE email = ?',
+      'SELECT id FROM users WHERE email = $1',
       [email]
     );
 
@@ -62,14 +63,14 @@ exports.register = async (req, res) => {
 
     const result = await db.runAsync(
       `INSERT INTO users (name, email, password, role, department, avatar_color) 
-       VALUES (?, ?, ?, ?, ?, ?)`,
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
       [
         name,
         email,
         hashedPassword,
         role,
         department,
-        '#40c3d8' // Default avatar color
+        '#40c3d8' 
       ]
     );
 
@@ -79,7 +80,7 @@ exports.register = async (req, res) => {
 
     const user = await db.getAsync(
       `SELECT id, name, email, role, department, avatar_color as avatarColor 
-       FROM users WHERE id = ?`,
+       FROM users WHERE id = $1`,
       [result.id]
     );
 
@@ -97,17 +98,18 @@ exports.register = async (req, res) => {
   } catch (error) {
     console.error('Register error:', error);
     
-    if (error.code === 'SQLITE_CONSTRAINT') {
-      return res.status(400).json({
-        success: false,
-        message: 'Database constraint error. Please check your input.'
-      });
-    }
-    
-    if (error.message.includes('UNIQUE constraint failed')) {
+    // PostgreSQL error codes
+    if (error.code === '23505') { // Unique violation
       return res.status(400).json({
         success: false,
         message: 'Email already exists'
+      });
+    }
+    
+    if (error.code === '23503') { // Foreign key violation
+      return res.status(400).json({
+        success: false,
+        message: 'Database constraint error. Please check your input.'
       });
     }
     
@@ -133,7 +135,7 @@ exports.login = async (req, res) => {
     }
 
     const user = await db.getAsync(
-      'SELECT id, name, email, password, role, department, avatar_color as avatarColor FROM users WHERE email = ?',
+      'SELECT id, name, email, password, role, department, avatar_color as avatarColor FROM users WHERE email = $1',
       [email]
     );
 
@@ -176,7 +178,7 @@ exports.login = async (req, res) => {
 exports.getMe = async (req, res) => {
   try {
     const user = await db.getAsync(
-      'SELECT id, name, email, role, department, avatar_color as avatarColor FROM users WHERE id = ?',
+      'SELECT id, name, email, role, department, avatar_color as avatarColor FROM users WHERE id = $1',
       [req.user.id]
     );
     
