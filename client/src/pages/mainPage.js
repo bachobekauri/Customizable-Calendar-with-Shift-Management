@@ -373,13 +373,18 @@ export default function MainPage() {
           <div className="loading-spinner">Loading schedule...</div>
         </div>
       </div>
+      
     );
   }
+
+  
 
   // Render
   return (
     <div className="main-container">
       {renderSidebar()}
+
+      
 
       <div className="content">
         <div className="top-bar">
