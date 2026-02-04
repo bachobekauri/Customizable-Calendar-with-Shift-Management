@@ -1,3 +1,4 @@
+
 const db = require('../db');
 
 const formatEmployee = (employee) => {
@@ -57,7 +58,7 @@ exports.getEmployee = async (req, res) => {
     const employee = await db.getAsync(
       `SELECT id, name, email, role, department, avatar_color, 
               created_at, phone
-       FROM users WHERE id = ?`,
+       FROM users WHERE id = $1`,
       [req.params.id]
     );
     
@@ -74,7 +75,7 @@ exports.getEmployee = async (req, res) => {
               se.confirmed
        FROM shift_employees se
        JOIN shifts s ON se.shift_id = s.id
-       WHERE se.employee_id = ?
+       WHERE se.employee_id = $1
        ORDER BY s.start_time DESC
        LIMIT 10`,
       [req.params.id]
@@ -84,28 +85,27 @@ exports.getEmployee = async (req, res) => {
       `SELECT 
         COUNT(*) as totalShifts,
         SUM(
-          CAST((julianday(s.end_time) - julianday(s.start_time)) * 24 AS REAL)
+          EXTRACT(EPOCH FROM (s.end_time - s.start_time)) / 3600
         ) as totalHours,
         AVG(s.hourly_rate) as avgHourlyRate,
         SUM(
-          CASE WHEN se.confirmed = 1 THEN 
-            CAST((julianday(s.end_time) - julianday(s.start_time)) * 24 * s.hourly_rate AS REAL)
+          CASE WHEN se.confirmed = TRUE THEN 
+            (EXTRACT(EPOCH FROM (s.end_time - s.start_time)) / 3600) * s.hourly_rate
           ELSE 0 END
         ) as totalEarnings
        FROM shift_employees se
        JOIN shifts s ON se.shift_id = s.id
-       WHERE se.employee_id = ?`,
+       WHERE se.employee_id = $1`,
       [req.params.id]
     );
 
-    // Get upcoming shifts
     const upcomingShifts = await db.allAsync(
       `SELECT s.id, s.title, s.start_time as startTime, s.end_time as endTime,
               s.status, s.department, s.location
        FROM shift_employees se
        JOIN shifts s ON se.shift_id = s.id
-       WHERE se.employee_id = ? 
-         AND s.start_time > datetime('now')
+       WHERE se.employee_id = $1 
+         AND s.start_time > NOW()
          AND s.status = 'published'
        ORDER BY s.start_time ASC
        LIMIT 5`,
@@ -127,10 +127,10 @@ exports.getEmployee = async (req, res) => {
           duration: ((new Date(shift.endTime) - new Date(shift.startTime)) / (1000 * 60 * 60)).toFixed(1)
         })),
         stats: {
-          totalShifts: stats.totalShifts || 0,
-          totalHours: Math.round(stats.totalHours || 0),
-          avgHourlyRate: stats.avgHourlyRate ? parseFloat(stats.avgHourlyRate).toFixed(2) : 0,
-          totalEarnings: stats.totalEarnings ? parseFloat(stats.totalEarnings).toFixed(2) : 0
+          totalShifts: parseInt(stats.totalshifts) || 0,
+          totalHours: Math.round(parseFloat(stats.totalhours) || 0),
+          avgHourlyRate: stats.avghourlyrate ? parseFloat(stats.avghourlyrate).toFixed(2) : 0,
+          totalEarnings: stats.totalearnings ? parseFloat(stats.totalearnings).toFixed(2) : 0
         }
       }
     });
@@ -158,19 +158,22 @@ exports.getEmployeeShifts = async (req, res) => {
              se.confirmed
       FROM shift_employees se
       JOIN shifts s ON se.shift_id = s.id
-      WHERE se.employee_id = ?
+      WHERE se.employee_id = $1
     `;
     
     const params = [req.params.id];
+    let paramIndex = 2;
 
     if (startDate && endDate) {
-      query += ` AND s.start_time >= ? AND s.start_time <= ?`;
+      query += ` AND s.start_time >= $${paramIndex} AND s.start_time <= $${paramIndex + 1}`;
       params.push(startDate, endDate);
+      paramIndex += 2;
     }
 
     if (status && status !== 'all') {
-      query += ` AND s.status = ?`;
+      query += ` AND s.status = $${paramIndex}`;
       params.push(status);
+      paramIndex++;
     }
 
     query += ` ORDER BY s.start_time DESC`;
@@ -186,7 +189,7 @@ exports.getEmployeeShifts = async (req, res) => {
     const totalShifts = formattedShifts.length;
     const totalHours = formattedShifts.reduce((sum, shift) => sum + parseFloat(shift.duration), 0);
     const totalEarnings = formattedShifts.reduce((sum, shift) => sum + parseFloat(shift.earnings), 0);
-    const confirmedShifts = formattedShifts.filter(shift => shift.confirmed === 1).length;
+    const confirmedShifts = formattedShifts.filter(shift => shift.confirmed === true).length;
 
     res.json({
       success: true,
@@ -217,7 +220,7 @@ exports.updateEmployee = async (req, res) => {
     const { name, email, role, department, phone, avatarColor } = req.body;
 
     const employeeExists = await db.getAsync(
-      'SELECT id, role FROM users WHERE id = ?',
+      'SELECT id, role FROM users WHERE id = $1',
       [req.params.id]
     );
 
@@ -230,7 +233,7 @@ exports.updateEmployee = async (req, res) => {
 
     if (email) {
       const emailExists = await db.getAsync(
-        'SELECT id FROM users WHERE email = ? AND id != ?',
+        'SELECT id FROM users WHERE email = $1 AND id != $2',
         [email, req.params.id]
       );
       
@@ -251,7 +254,8 @@ exports.updateEmployee = async (req, res) => {
 
     if (role && role !== 'admin' && employeeExists.role === 'admin') {
       const adminCount = await db.getAsync(
-        'SELECT COUNT(*) as count FROM users WHERE role = "admin"'
+        'SELECT COUNT(*) as count FROM users WHERE role = $1',
+        ['admin']
       );
       
       if (adminCount.count <= 1) {
@@ -264,13 +268,13 @@ exports.updateEmployee = async (req, res) => {
 
     await db.runAsync(
       `UPDATE users SET
-        name = COALESCE(?, name),
-        email = COALESCE(?, email),
-        role = COALESCE(?, role),
-        department = COALESCE(?, department),
-        phone = COALESCE(?, phone),
-        avatar_color = COALESCE(?, avatar_color)
-       WHERE id = ?`,
+        name = COALESCE($1, name),
+        email = COALESCE($2, email),
+        role = COALESCE($3, role),
+        department = COALESCE($4, department),
+        phone = COALESCE($5, phone),
+        avatar_color = COALESCE($6, avatar_color)
+       WHERE id = $7`,
       [
         name || employeeExists.name,
         email || employeeExists.email,
@@ -285,7 +289,7 @@ exports.updateEmployee = async (req, res) => {
     const updatedEmployee = await db.getAsync(
       `SELECT id, name, email, role, department, avatar_color, 
               created_at, phone
-       FROM users WHERE id = ?`,
+       FROM users WHERE id = $1`,
       [req.params.id]
     );
 
@@ -308,7 +312,7 @@ exports.updateEmployee = async (req, res) => {
 exports.deleteEmployee = async (req, res) => {
   try {
     const employee = await db.getAsync(
-      'SELECT id, role FROM users WHERE id = ?',
+      'SELECT id, role FROM users WHERE id = $1',
       [req.params.id]
     );
 
@@ -328,7 +332,8 @@ exports.deleteEmployee = async (req, res) => {
 
     if (employee.role === 'admin') {
       const adminCount = await db.getAsync(
-        'SELECT COUNT(*) as count FROM users WHERE role = "admin"'
+        'SELECT COUNT(*) as count FROM users WHERE role = $1',
+        ['admin']
       );
       
       if (adminCount.count <= 1) {
@@ -339,8 +344,7 @@ exports.deleteEmployee = async (req, res) => {
       }
     }
 
-    // Delete employee (cascade will delete shift_employees)
-    await db.runAsync('DELETE FROM users WHERE id = ?', [req.params.id]);
+    await db.runAsync('DELETE FROM users WHERE id = $1', [req.params.id]);
 
     res.json({
       success: true,
