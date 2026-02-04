@@ -330,9 +330,7 @@ export default function MainPage() {
 
           {user.role === 'employee' ? (
             <>
-              <button onClick={() => navigate('/employees')}>👥 Team</button>
               <button onClick={() => navigate('/request-schedule')}>📋 Requests</button>
-              <button onClick={() => navigate('/settings')}>⚙️ Settings</button>
             </>
           ) : (
             <>
