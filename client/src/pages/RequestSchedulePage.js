@@ -71,13 +71,23 @@ const RequestSchedulePage = () => {
 
       if (requestsResponse.ok) {
         const requestsData = await requestsResponse.json();
+        console.log('=== REQUEST DATA DEBUG ===');
+        console.log('Full response:', requestsData);
+        console.log('All requests:', requestsData.data);
+        console.log('Current user ID:', user.id);
+        
         if (requestsData.data && Array.isArray(requestsData.data)) {
           // Filter requests made by this employee
-          const employeeRequests = requestsData.data.filter(req => 
-            req.requested_by === user.id
-          );
+          // Compare both as strings in case one is UUID and one is string
+          const employeeRequests = requestsData.data.filter(req => {
+            const matches = String(req.requested_by) === String(user.id);
+            console.log(`Checking request: requested_by="${req.requested_by}" vs user.id="${user.id}" => ${matches}`);
+            return matches;
+          });
+          
           setRequests(employeeRequests);
           console.log('Employee requests:', employeeRequests.length);
+          console.log('Filtered requests:', employeeRequests);
         }
       }
 
@@ -131,6 +141,9 @@ const RequestSchedulePage = () => {
         throw new Error(errorData.message || 'Failed to submit request');
       }
 
+      const responseData = await response.json();
+      console.log('Request created successfully:', responseData);
+
       alert('Request submitted successfully!');
       setShowRequestModal(false);
       setRequestReason('');
@@ -139,7 +152,8 @@ const RequestSchedulePage = () => {
       setSelectedShift(null);
       setRequestType('swap');
       
-      // Refresh requests
+      // Refresh requests list after successful submission
+      console.log('Refreshing requests list...');
       fetchData();
     } catch (error) {
       console.error('Error:', error);
@@ -202,9 +216,6 @@ const RequestSchedulePage = () => {
           <button className="active">
             📋 Requests
           </button>
-          <button onClick={() => navigate('/settings')} style={{ fontWeight: 'normal' }}>
-            ⚙️ Settings
-          </button>
           <button onClick={logout} style={{ marginTop: 'auto', fontWeight: 'normal' }}>
             🚪 Logout
           </button>
@@ -229,8 +240,7 @@ const RequestSchedulePage = () => {
               color: '#EA454C',
               padding: '12px 16px',
               borderRadius: '8px',
-              marginBottom: '16px',
-              fontSize: '14px'
+              marginBottom: '20px'
             }}>
               ⚠️ {error}
             </div>
@@ -238,154 +248,154 @@ const RequestSchedulePage = () => {
         </div>
 
         {/* CONTENT */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', flex: 1, overflow: 'hidden' }}>
-          {/* LEFT: Your Shifts */}
-          <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <h2 style={{ margin: '0 0 16px 0', fontSize: '18px' }}>
+        <div style={{ flex: 1, display: 'flex', gap: '20px', overflow: 'hidden' }}>
+          {/* LEFT: Available Shifts */}
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            <h2 style={{ margin: '0 0 15px 0', fontSize: '16px', fontWeight: '600' }}>
               📅 Your Shifts ({shifts.length})
             </h2>
-
-            {shifts.length === 0 ? (
-              <div style={{
-                backgroundColor: 'white',
-                borderRadius: '12px',
-                padding: '40px 20px',
-                textAlign: 'center',
-                boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center'
-              }}>
-                <p style={{ fontSize: '14px', color: '#666', margin: 0 }}>
+            <div style={{ 
+              flex: 1, 
+              overflowY: 'auto', 
+              paddingRight: '10px',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+              gap: '12px'
+            }}>
+              {shifts.length === 0 ? (
+                <div style={{ color: '#999', padding: '20px', textAlign: 'center' }}>
                   No shifts assigned
-                </p>
-              </div>
-            ) : (
-              <div style={{ flex: 1, overflowY: 'auto', paddingRight: '10px' }}>
-                {shifts.map((shift, idx) => {
-                  const startTime = shift.start_time || shift.startTime;
-                  const endTime = shift.end_time || shift.endTime;
-
-                  return (
-                    <div
-                      key={shift.id || shift._id || idx}
+                </div>
+              ) : (
+                shifts.map(shift => (
+                  <div
+                    key={shift.id || shift._id}
+                    onClick={() => {
+                      setSelectedShift(shift);
+                      setShowRequestModal(true);
+                    }}
+                    style={{
+                      padding: '16px',
+                      border: '1px solid #ddd',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      backgroundColor: selectedShift?.id === shift.id ? '#E8F4F8' : 'white',
+                      borderColor: selectedShift?.id === shift.id ? '#40c3d8' : '#ddd',
+                      ':hover': { borderColor: '#40c3d8' }
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.borderColor = '#40c3d8'}
+                    onMouseLeave={(e) => e.currentTarget.style.borderColor = selectedShift?.id === shift.id ? '#40c3d8' : '#ddd'}
+                  >
+                    <div style={{ fontWeight: '600', marginBottom: '8px', color: '#333' }}>
+                      {shift.title}
+                    </div>
+                    <div style={{ fontSize: '13px', color: '#666', marginBottom: '8px' }}>
+                      📅 {moment(shift.start_time || shift.startTime).format('MMM DD, YYYY')}
+                      <br />
+                      🕒 {moment(shift.start_time || shift.startTime).format('HH:mm')} - {moment(shift.end_time || shift.endTime).format('HH:mm')}
+                    </div>
+                    {shift.department && (
+                      <div style={{ fontSize: '12px', color: '#999', marginBottom: '8px' }}>
+                        🏢 {shift.department}
+                      </div>
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedShift(shift);
+                        setShowRequestModal(true);
+                      }}
                       style={{
-                        backgroundColor: 'white',
-                        borderRadius: '12px',
-                        padding: '16px',
-                        marginBottom: '12px',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                        borderLeft: '4px solid #40c3d8'
+                        width: '100%',
+                        padding: '8px',
+                        backgroundColor: '#40c3d8',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        fontWeight: '600'
                       }}
                     >
-                      <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#333' }}>
-                        {shift.title}
-                      </h3>
-                      <div style={{ fontSize: '14px', color: '#666', marginBottom: '12px' }}>
-                        <div>
-                          📅 {moment(startTime).format('MMM DD, YYYY')}
-                        </div>
-                        <div>
-                          🕐 {moment(startTime).format('HH:mm')} - {moment(endTime).format('HH:mm')}
-                        </div>
-                        <div>
-                          ⏱️ {((new Date(endTime) - new Date(startTime)) / (1000 * 60 * 60)).toFixed(1)}h
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setSelectedShift(shift);
-                          setShowRequestModal(true);
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: '10px',
-                          backgroundColor: '#40c3d8',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          fontWeight: '600',
-                          fontSize: '14px'
-                        }}
-                      >
-                        Request Change
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                      Request Change
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
 
           {/* RIGHT: Your Requests */}
-          <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <h2 style={{ margin: '0 0 16px 0', fontSize: '18px' }}>
-              📨 Your Requests ({requests.length})
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            <h2 style={{ margin: '0 0 15px 0', fontSize: '16px', fontWeight: '600' }}>
+              📋 Your Requests ({requests.length})
             </h2>
-
-            {requests.length === 0 ? (
-              <div style={{
-                backgroundColor: 'white',
-                borderRadius: '12px',
-                padding: '40px 20px',
-                textAlign: 'center',
-                boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center'
-              }}>
-                <p style={{ fontSize: '14px', color: '#666', margin: 0 }}>
-                  No requests yet
-                </p>
-              </div>
-            ) : (
-              <div style={{ flex: 1, overflowY: 'auto', paddingRight: '10px' }}>
-                {requests.map((request, idx) => {
-                  const colors = getRequestStatusColor(request.status);
-
+            <div style={{ flex: 1, overflowY: 'auto', paddingRight: '10px' }}>
+              {requests.length === 0 ? (
+                <div style={{
+                  padding: '40px 20px',
+                  textAlign: 'center',
+                  color: '#999'
+                }}>
+                  <div style={{ fontSize: '14px', marginBottom: '8px' }}>
+                    No requests yet
+                  </div>
+                  <div style={{ fontSize: '12px' }}>
+                    Select a shift to request a change
+                  </div>
+                </div>
+              ) : (
+                requests.map(request => {
+                  const statusColor = getRequestStatusColor(request.status);
                   return (
                     <div
-                      key={request.id || request._id || idx}
+                      key={request.id}
                       style={{
-                        backgroundColor: 'white',
-                        borderRadius: '12px',
                         padding: '16px',
+                        border: '1px solid #ddd',
+                        borderRadius: '8px',
                         marginBottom: '12px',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                        borderLeft: '4px solid #ff9800'
+                        backgroundColor: '#fafafa'
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
-                        <h3 style={{ margin: 0, fontSize: '16px', color: '#333' }}>
-                          {getRequestTypeLabel(request.request_type)}
-                        </h3>
-                        <span style={{
-                          padding: '4px 12px',
-                          backgroundColor: colors.bg,
-                          color: colors.text,
-                          borderRadius: '12px',
-                          fontSize: '12px',
-                          fontWeight: '600',
-                          textTransform: 'capitalize'
-                        }}>
+                        <div>
+                          <div style={{ fontWeight: '600', color: '#333', marginBottom: '4px' }}>
+                            {getRequestTypeLabel(request.request_type)}
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#666' }}>
+                            ID: {request.id.substring(0, 8)}...
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            backgroundColor: statusColor.bg,
+                            color: statusColor.text,
+                            padding: '4px 12px',
+                            borderRadius: '12px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
                           {request.status}
-                        </span>
+                        </div>
                       </div>
 
                       {request.reason && (
-                        <div style={{ fontSize: '13px', color: '#666', marginBottom: '8px' }}>
+                        <div style={{ marginTop: '8px', fontSize: '13px', color: '#555' }}>
                           <strong>Reason:</strong> {request.reason}
                         </div>
                       )}
 
-                      <div style={{ fontSize: '12px', color: '#999' }}>
-                        {moment(request.created_at).format('MMM DD, YYYY HH:mm')}
-                      </div>
+                      {request.proposed_start_time && request.proposed_end_time && (
+                        <div style={{ marginTop: '8px', fontSize: '13px', color: '#555' }}>
+                          <strong>Proposed time:</strong> {moment(request.proposed_start_time).format('MMM DD HH:mm')} - {moment(request.proposed_end_time).format('HH:mm')}
+                        </div>
+                      )}
 
-                      {request.status === 'rejected' && request.rejection_reason && (
+                      {request.rejection_reason && (
                         <div style={{
                           backgroundColor: '#f8d7da',
                           color: '#721c24',
@@ -399,9 +409,10 @@ const RequestSchedulePage = () => {
                       )}
                     </div>
                   );
-                })}
+                })
+              )}
               </div>
-            )}
+            
           </div>
         </div>
       </div>
