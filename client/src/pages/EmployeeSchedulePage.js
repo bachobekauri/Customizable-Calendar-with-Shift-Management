@@ -31,7 +31,6 @@ const EmployeeSchedulePage = () => {
         return;
       }
 
-      // STEP 1: Fetch Employee Data
       console.log('🔄 Fetching employee data for ID:', id);
       const empResponse = await fetch(`${apiUrl}/users/${id}`, {
         headers: {
@@ -48,11 +47,9 @@ const EmployeeSchedulePage = () => {
       console.log('✓ Employee data:', empData.data);
       setEmployee(empData.data);
 
-      // STEP 2: Fetch Shifts - Try multiple approaches
       console.log('🔄 Fetching shifts...');
       let shiftsData = [];
 
-      // Approach 1: Try /employees/:id/shifts endpoint
       try {
         console.log('  Trying /employees/' + id + '/shifts');
         const empShiftsResponse = await fetch(`${apiUrl}/employees/${id}/shifts`, {
@@ -73,7 +70,6 @@ const EmployeeSchedulePage = () => {
         console.warn('  /employees/:id/shifts failed:', e.message);
       }
 
-      // Approach 2: If no shifts found, fetch all shifts and filter
       if (shiftsData.length === 0) {
         try {
           console.log('  Trying /shifts (fetch all and filter)');
@@ -92,23 +88,19 @@ const EmployeeSchedulePage = () => {
               const allShifts = allShiftsData.data;
               console.log('  Total shifts in system:', allShifts.length);
 
-              // Filter shifts assigned to this employee
               shiftsData = allShifts.filter(shift => {
                 if (!shift) return false;
 
-                // Check if shift has employees array
                 if (Array.isArray(shift.employees)) {
                   return shift.employees.some(emp => 
                     (emp && (emp.id === id || emp._id === id || emp === id))
                   );
                 }
 
-                // Check if shift has employee_ids array
                 if (Array.isArray(shift.employee_ids)) {
                   return shift.employee_ids.includes(id);
                 }
 
-                // Check if shift has a single employee field
                 if (shift.employee_id === id) {
                   return true;
                 }
@@ -124,7 +116,6 @@ const EmployeeSchedulePage = () => {
         }
       }
 
-      // STEP 3: Log shifts for debugging
       if (shiftsData.length > 0) {
         console.log('📊 Sample shift structure:', shiftsData[0]);
       } else {
@@ -134,7 +125,27 @@ const EmployeeSchedulePage = () => {
         console.log('  Employee data:', empData.data);
       }
 
-      setShifts(shiftsData);
+const normalizedShifts = shiftsData.map(shift => {
+  console.log('Raw shift:', shift); // Debug: see what properties exist
+  
+  return {
+    ...shift,
+    id: shift.id || shift._id,
+    startTime: shift.startTime || shift.starttime || shift.start_time,
+    endTime: shift.endTime || shift.endtime || shift.end_time,
+    title: shift.title || shift.name || 'Untitled Shift',
+    hourlyRate: shift.hourlyRate || shift.hourlyrate,
+    requiredEmployees: shift.requiredEmployees || shift.requiredemployees,
+    location: shift.location || 'Not specified',
+    status: shift.status || 'published',
+    department: shift.department || 'General',
+    confirmedEmployees: shift.confirmedEmployees || []
+  };
+});
+
+console.log('Normalized shifts:', normalizedShifts);
+
+      setShifts(normalizedShifts);
 
     } catch (error) {
       console.error('❌ Error fetching data:', error);
@@ -358,14 +369,14 @@ const EmployeeSchedulePage = () => {
                     </thead>
                     <tbody>
                       {shifts.map((shift, idx) => {
-                        const startTime = shift.startTime || shift.start_time || shift.datetime;
-                        const endTime = shift.endTime || shift.end_time;
+                        const startTime = shift.startTime || shift.starttime || shift.start_time || shift.datetime;
+                        const endTime = shift.endTime || shift.endtime || shift.end_time;
                         const title = shift.title || shift.name || 'Untitled Shift';
 
                         if (!startTime) return null;
 
-                        const duration = endTime 
-                          ? ((new Date(endTime) - new Date(startTime)) / (1000 * 60 * 60)).toFixed(1)
+                        const duration = shift.endtime 
+                          ? ((new Date(shift.endtime) - new Date(shift.starttime)) / (1000 * 60 * 60)).toFixed(1)
                           : 'N/A';
 
                         return (
