@@ -1,3 +1,4 @@
+
 const jwt = require('jsonwebtoken');
 const db = require('../db');
 
@@ -26,7 +27,7 @@ const protect = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_fallback_secret');
 
     const user = await db.getAsync(
-      'SELECT id, name, email, role, department, avatar_color as avatarColor FROM users WHERE id = ?',
+      'SELECT id, name, email, role, department, avatar_color as avatarColor FROM users WHERE id = $1',
       [decoded.id]
     );
 

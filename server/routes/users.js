@@ -8,7 +8,6 @@ const {
 } = require('../controllers/userController');
 const { protect, role } = require('../middleware/authMiddleware.js');
 
-// Apply protection to all routes
 router.use(protect);
 
 router.route('/')

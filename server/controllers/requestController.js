@@ -1,3 +1,4 @@
+
 const db = require('../db');
 const { v4: uuidv4 } = require('uuid');
 
@@ -29,30 +30,36 @@ exports.getRequests = async (req, res) => {
     `;
     
     const params = [];
+    let paramIndex = 1;
     
     if (status) {
-      query += ` AND sr.status = ?`;
+      query += ` AND sr.status = $${paramIndex}`;
       params.push(status);
+      paramIndex++;
     }
     
     if (type) {
-      query += ` AND sr.request_type = ?`;
+      query += ` AND sr.request_type = $${paramIndex}`;
       params.push(type);
+      paramIndex++;
     }
     
     if (userId) {
-      query += ` AND (sr.requested_by = ? OR sr.assigned_to = ?)`;
+      query += ` AND (sr.requested_by = $${paramIndex} OR sr.assigned_to = $${paramIndex + 1})`;
       params.push(userId, userId);
+      paramIndex += 2;
     }
     
     if (req.user.role === 'manager') {
-      query += ` AND (sr.assigned_to = ? OR sr.requested_by IN (
-        SELECT id FROM users WHERE department = ?
+      query += ` AND (sr.assigned_to = $${paramIndex} OR sr.requested_by IN (
+        SELECT id FROM users WHERE department = $${paramIndex + 1}
       ))`;
       params.push(req.user.id, req.user.department);
+      paramIndex += 2;
     } else if (req.user.role === 'employee') {
-      query += ` AND sr.requested_by = ?`;
+      query += ` AND sr.requested_by = $${paramIndex}`;
       params.push(req.user.id);
+      paramIndex++;
     }
     
     query += ` ORDER BY sr.created_at DESC`;
@@ -81,7 +88,7 @@ exports.getAvailableReplacements = async (req, res) => {
     const { shiftId } = req.params;
     
     const shift = await db.getAsync(
-      'SELECT * FROM shifts WHERE id = ?',
+      'SELECT * FROM shifts WHERE id = $1',
       [shiftId]
     );
     
@@ -101,21 +108,21 @@ exports.getAvailableReplacements = async (req, res) => {
        FROM users u
        WHERE u.role IN ('employee', 'manager')
          AND u.id NOT IN (
-           SELECT employee_id FROM shift_employees WHERE shift_id = ?
+           SELECT employee_id FROM shift_employees WHERE shift_id = $1
          )
          AND u.id NOT IN (
            SELECT se.employee_id 
            FROM shift_employees se
            JOIN shifts s ON se.shift_id = s.id
-           WHERE s.id != ?
-             AND s.start_time < ? 
-             AND s.end_time > ?
+           WHERE s.id != $2
+             AND s.start_time < $3 
+             AND s.end_time > $4
          )
-         AND (u.department = ? OR u.department = 'General')
+         AND (u.department = $5 OR u.department = 'General')
        ORDER BY 
-         CASE WHEN u.department = ? THEN 0 ELSE 1 END,
+         CASE WHEN u.department = $5 THEN 0 ELSE 1 END,
          u.name ASC`,
-      [shiftId, shiftId, shift.end_time, shift.start_time, shift.department, shift.department]
+      [shiftId, shiftId, shift.end_time, shift.start_time, shift.department]
     );
     
     res.json({
@@ -157,7 +164,7 @@ exports.createRequest = async (req, res) => {
     // Verify user is assigned to this shift
     const assignment = await db.getAsync(
       `SELECT se.* FROM shift_employees se 
-       WHERE se.shift_id = ? AND se.employee_id = ?`,
+       WHERE se.shift_id = $1 AND se.employee_id = $2`,
       [shiftId, req.user.id]
     );
     
@@ -169,7 +176,7 @@ exports.createRequest = async (req, res) => {
     }
     
     const shift = await db.getAsync(
-      'SELECT * FROM shifts WHERE id = ?',
+      'SELECT * FROM shifts WHERE id = $1',
       [shiftId]
     );
     
@@ -180,10 +187,9 @@ exports.createRequest = async (req, res) => {
       });
     }
     
-    // Check for existing pending requests for this shift
     const existingRequest = await db.getAsync(
       `SELECT id FROM shift_requests 
-       WHERE shift_id = ? AND requested_by = ? AND status = 'pending'`,
+       WHERE shift_id = $1 AND requested_by = $2 AND status = 'pending'`,
       [shiftId, req.user.id]
     );
     
@@ -194,7 +200,6 @@ exports.createRequest = async (req, res) => {
       });
     }
     
-    // Validate change request times
     if (requestType === 'change') {
       if (!proposedStartTime || !proposedEndTime) {
         return res.status(400).json({
@@ -214,13 +219,12 @@ exports.createRequest = async (req, res) => {
       }
     }
     
-    // Determine who the request is assigned to
     let assignedTo = shift.created_by;
     if (!assignedTo) {
       const manager = await db.getAsync(
         `SELECT id FROM users 
          WHERE role IN ('manager', 'admin') 
-           AND (department = ? OR role = 'admin')
+           AND (department = $1 OR role = 'admin')
          ORDER BY CASE WHEN role = 'admin' THEN 0 ELSE 1 END
          LIMIT 1`,
         [shift.department]
@@ -234,27 +238,25 @@ exports.createRequest = async (req, res) => {
       `INSERT INTO shift_requests 
        (id, shift_id, request_type, status, reason, requested_by, assigned_to, 
         proposed_start_time, proposed_end_time, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())`,
       [requestId, shiftId, requestType, 'pending', reason || '', req.user.id, assignedTo,
        proposedStartTime || null, proposedEndTime || null]
     );
     
-    // Create audit log
     const auditId = uuidv4();
     await db.runAsync(
       `INSERT INTO audit_logs 
        (id, user_id, action, resource_type, resource_id, details, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
       [auditId, req.user.id, 'create_request', 'shift_request', requestId, 
        JSON.stringify({ requestType, reason, proposedStartTime, proposedEndTime })]
     );
     
-    // Create notification for manager
     const notifId = uuidv4();
     await db.runAsync(
       `INSERT INTO notifications 
        (id, user_id, type, title, message, related_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
       [notifId, assignedTo, 'shift_request', 'New Shift Request',
        `${req.user.name} requested to ${requestType} shift "${shift.title}"`, requestId]
     );
@@ -265,7 +267,7 @@ exports.createRequest = async (req, res) => {
        FROM shift_requests sr
        LEFT JOIN users u ON sr.requested_by = u.id
        LEFT JOIN shifts s ON sr.shift_id = s.id
-       WHERE sr.id = ?`,
+       WHERE sr.id = $1`,
       [requestId]
     );
     
@@ -293,7 +295,7 @@ exports.approveRequest = async (req, res) => {
       `SELECT sr.*, s.title, s.start_time, s.end_time, s.department
        FROM shift_requests sr
        JOIN shifts s ON sr.shift_id = s.id
-       WHERE sr.id = ?`,
+       WHERE sr.id = $1`,
       [req.params.id]
     );
     
@@ -311,7 +313,6 @@ exports.approveRequest = async (req, res) => {
       });
     }
     
-    // Authorization check
     if (req.user.role === 'manager' && request.assigned_to !== req.user.id) {
       return res.status(403).json({
         success: false,
@@ -319,9 +320,7 @@ exports.approveRequest = async (req, res) => {
       });
     }
     
-    // Handle different request types
     if (request.request_type === 'swap') {
-      // Swap requires a replacement employee
       if (!replacementEmployeeId) {
         return res.status(400).json({
           success: false,
@@ -329,9 +328,8 @@ exports.approveRequest = async (req, res) => {
         });
       }
       
-      // Verify replacement employee exists and is available
       const replacementEmployee = await db.getAsync(
-        'SELECT * FROM users WHERE id = ? AND role IN ("employee", "manager")',
+        `SELECT * FROM users WHERE id = $1 AND role IN ('employee', 'manager')`,
         [replacementEmployeeId]
       );
       
@@ -342,9 +340,8 @@ exports.approveRequest = async (req, res) => {
         });
       }
       
-      // Check if replacement is already assigned to this shift
       const alreadyAssigned = await db.getAsync(
-        'SELECT * FROM shift_employees WHERE shift_id = ? AND employee_id = ?',
+        'SELECT * FROM shift_employees WHERE shift_id = $1 AND employee_id = $2',
         [request.shift_id, replacementEmployeeId]
       );
       
@@ -355,13 +352,12 @@ exports.approveRequest = async (req, res) => {
         });
       }
       
-      // Check for scheduling conflicts
       const conflict = await db.getAsync(
         `SELECT s.title FROM shift_employees se
          JOIN shifts s ON se.shift_id = s.id
-         WHERE se.employee_id = ?
-           AND s.start_time < ?
-           AND s.end_time > ?`,
+         WHERE se.employee_id = $1
+           AND s.start_time < $2
+           AND s.end_time > $3`,
         [replacementEmployeeId, request.end_time, request.start_time]
       );
       
@@ -372,39 +368,34 @@ exports.approveRequest = async (req, res) => {
         });
       }
       
-      // Remove original employee from shift
       await db.runAsync(
-        'DELETE FROM shift_employees WHERE shift_id = ? AND employee_id = ?',
+        'DELETE FROM shift_employees WHERE shift_id = $1 AND employee_id = $2',
         [request.shift_id, request.requested_by]
       );
       
-      // Add replacement employee to shift
       await db.runAsync(
-        'INSERT INTO shift_employees (shift_id, employee_id, confirmed) VALUES (?, ?, 0)',
+        'INSERT INTO shift_employees (shift_id, employee_id, confirmed) VALUES ($1, $2, FALSE)',
         [request.shift_id, replacementEmployeeId]
       );
       
-      // Update request with replacement employee
       await db.runAsync(
         `UPDATE shift_requests 
-         SET status = ?, replacement_employee_id = ?, updated_at = datetime('now') 
-         WHERE id = ?`,
+         SET status = $1, replacement_employee_id = $2, updated_at = NOW() 
+         WHERE id = $3`,
         ['approved', replacementEmployeeId, req.params.id]
       );
       
-      // Notify replacement employee
       const notifId1 = uuidv4();
       await db.runAsync(
         `INSERT INTO notifications 
          (id, user_id, type, title, message, related_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
         [notifId1, replacementEmployeeId, 'shift_assigned', 'New Shift Assignment',
          `You've been assigned to cover "${request.title}" on ${new Date(request.start_time).toLocaleDateString()}`,
          request.shift_id]
       );
       
     } else if (request.request_type === 'change') {
-      // Update shift times
       if (!request.proposed_start_time || !request.proposed_end_time) {
         return res.status(400).json({
           success: false,
@@ -414,37 +405,35 @@ exports.approveRequest = async (req, res) => {
       
       await db.runAsync(
         `UPDATE shifts 
-         SET start_time = ?, end_time = ? 
-         WHERE id = ?`,
+         SET start_time = $1, end_time = $2 
+         WHERE id = $3`,
         [request.proposed_start_time, request.proposed_end_time, request.shift_id]
       );
       
       await db.runAsync(
         `UPDATE shift_requests 
-         SET status = ?, updated_at = datetime('now') 
-         WHERE id = ?`,
+         SET status = $1, updated_at = NOW() 
+         WHERE id = $2`,
         ['approved', req.params.id]
       );
       
     } else if (request.request_type === 'cancel') {
-      // Cancel the shift
       await db.runAsync(
         `UPDATE shifts 
          SET status = 'cancelled' 
-         WHERE id = ?`,
+         WHERE id = $1`,
         [request.shift_id]
       );
       
       await db.runAsync(
         `UPDATE shift_requests 
-         SET status = ?, updated_at = datetime('now') 
-         WHERE id = ?`,
+         SET status = $1, updated_at = NOW() 
+         WHERE id = $2`,
         ['approved', req.params.id]
       );
       
-      // Notify all assigned employees
       const assignedEmployees = await db.allAsync(
-        'SELECT employee_id FROM shift_employees WHERE shift_id = ?',
+        'SELECT employee_id FROM shift_employees WHERE shift_id = $1',
         [request.shift_id]
       );
       
@@ -454,7 +443,7 @@ exports.approveRequest = async (req, res) => {
           await db.runAsync(
             `INSERT INTO notifications 
              (id, user_id, type, title, message, related_id, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+             VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
             [notifId, emp.employee_id, 'shift_cancelled', 'Shift Cancelled',
              `Shift "${request.title}" has been cancelled`, request.shift_id]
           );
@@ -462,22 +451,20 @@ exports.approveRequest = async (req, res) => {
       }
     }
     
-    // Create audit log
     const auditId = uuidv4();
     await db.runAsync(
       `INSERT INTO audit_logs 
        (id, user_id, action, resource_type, resource_id, details, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
       [auditId, req.user.id, 'approve_request', 'shift_request', req.params.id,
        JSON.stringify({ replacementEmployeeId })]
     );
     
-    // Notify original requester
     const notifId2 = uuidv4();
     await db.runAsync(
       `INSERT INTO notifications 
        (id, user_id, type, title, message, related_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
       [notifId2, request.requested_by, 'request_approved', 'Request Approved',
        `Your ${request.request_type} request for "${request.title}" has been approved`, req.params.id]
     );
@@ -491,7 +478,7 @@ exports.approveRequest = async (req, res) => {
        LEFT JOIN users req_user ON sr.requested_by = req_user.id
        LEFT JOIN users replace_user ON sr.replacement_employee_id = replace_user.id
        LEFT JOIN shifts s ON sr.shift_id = s.id
-       WHERE sr.id = ?`,
+       WHERE sr.id = $1`,
       [req.params.id]
     );
     
@@ -520,7 +507,7 @@ exports.rejectRequest = async (req, res) => {
       `SELECT sr.*, s.title 
        FROM shift_requests sr
        JOIN shifts s ON sr.shift_id = s.id
-       WHERE sr.id = ?`,
+       WHERE sr.id = $1`,
       [req.params.id]
     );
     
@@ -549,27 +536,25 @@ exports.rejectRequest = async (req, res) => {
     
     await db.runAsync(
       `UPDATE shift_requests 
-       SET status = ?, reason = ?, updated_at = datetime('now') 
-       WHERE id = ?`,
+       SET status = $1, reason = $2, updated_at = NOW() 
+       WHERE id = $3`,
       ['rejected', rejectionReason, req.params.id]
     );
     
-    // Create audit log
     const auditId = uuidv4();
     await db.runAsync(
       `INSERT INTO audit_logs 
        (id, user_id, action, resource_type, resource_id, details, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
       [auditId, req.user.id, 'reject_request', 'shift_request', req.params.id,
        JSON.stringify({ reason: rejectionReason })]
     );
     
-    // Notify requester
     const notifId = uuidv4();
     await db.runAsync(
       `INSERT INTO notifications 
        (id, user_id, type, title, message, related_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
       [notifId, request.requested_by, 'request_rejected', 'Request Rejected',
        `Your ${request.request_type} request for "${request.title}" was rejected. Reason: ${rejectionReason}`,
        req.params.id]
@@ -579,7 +564,7 @@ exports.rejectRequest = async (req, res) => {
       `SELECT sr.*, s.title 
        FROM shift_requests sr
        LEFT JOIN shifts s ON sr.shift_id = s.id
-       WHERE sr.id = ?`,
+       WHERE sr.id = $1`,
       [req.params.id]
     );
     
@@ -603,7 +588,7 @@ exports.rejectRequest = async (req, res) => {
 exports.cancelRequest = async (req, res) => {
   try {
     const request = await db.getAsync(
-      'SELECT * FROM shift_requests WHERE id = ?',
+      'SELECT * FROM shift_requests WHERE id = $1',
       [req.params.id]
     );
     
@@ -630,22 +615,21 @@ exports.cancelRequest = async (req, res) => {
     
     await db.runAsync(
       `UPDATE shift_requests 
-       SET status = ?, updated_at = datetime('now') 
-       WHERE id = ?`,
+       SET status = $1, updated_at = NOW() 
+       WHERE id = $2`,
       ['cancelled', req.params.id]
     );
     
-    // Create audit log
     const auditId = uuidv4();
     await db.runAsync(
       `INSERT INTO audit_logs 
        (id, user_id, action, resource_type, resource_id, details, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
       [auditId, req.user.id, 'cancel_request', 'shift_request', req.params.id, '']
     );
     
     const updated = await db.getAsync(
-      'SELECT * FROM shift_requests WHERE id = ?',
+      'SELECT * FROM shift_requests WHERE id = $1',
       [req.params.id]
     );
     

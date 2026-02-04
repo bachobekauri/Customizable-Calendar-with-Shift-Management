@@ -26,16 +26,18 @@
   },
   "homepage": "https://github.com/bachobekauri/Customizable-Calendar-with-Shift-Management#readme",
   "dependencies": {
-    "express": "^5.1.0",
-    "cors": "^2.8.5",
     "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.2",
-    "sqlite3": "^5.1.6",
+    "cors": "^2.8.5",
     "dotenv": "^16.3.1",
+    "express": "^5.1.0",
+    "express-validator": "^7.0.1",
     "helmet": "^7.1.0",
-    "morgan": "^1.10.0",
+    "jsonwebtoken": "^9.0.2",
     "moment": "^2.29.4",
-    "express-validator": "^7.0.1"
+    "morgan": "^1.10.0",
+    "pg": "^8.18.0",
+    "sqlite3": "^5.1.6",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

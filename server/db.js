@@ -1,71 +1,69 @@
-const sqlite3 = require('sqlite3').verbose();
+
+const { Pool } = require('pg');
 const path = require('path');
-const fs = require('fs');
+require('dotenv').config();
 
-const dbPath = process.env.DATABASE_PATH || './shift_calendar.db';
-
-const dir = path.dirname(dbPath);
-if (!fs.existsSync(dir)) {
-  fs.mkdirSync(dir, { recursive: true });
-}
-
-const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) {
-    console.error('Error opening database:', err.message);
-  } else {
-    console.log('Connected to SQLite database at', dbPath);
-    
-    db.run('PRAGMA foreign_keys = ON');
-    
-    db.run('PRAGMA journal_mode = WAL');
-    
-    db.run('PRAGMA synchronous = NORMAL');
-  }
+const pool = new Pool({
+  host: process.env.PG_HOST || 'localhost',
+  port: process.env.PG_PORT || 5432,
+  database: process.env.PG_DATABASE || 'shift_calendar',
+  user: process.env.PG_USER || 'postgres',
+  password: process.env.PG_PASSWORD || 'postgres',
+  max: 20, // max number of clients in the pool
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
 });
 
-db.runAsync = function(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    this.run(sql, params, function(err) {
-      if (err) {
-        reject(err);
-      } else {
-        resolve({ id: this.lastID, changes: this.changes });
-      }
-    });
-  });
-};
+pool.on('connect', () => {
+  console.log('Connected to PostgreSQL database');
+});
 
-db.getAsync = function(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    this.get(sql, params, (err, row) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(row);
-      }
-    });
-  });
-};
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle client', err);
+  process.exit(-1);
+});
 
-db.allAsync = function(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    this.all(sql, params, (err, rows) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(rows);
-      }
-    });
-  });
+const db = {
+  query: (text, params) => pool.query(text, params),
+  
+  runAsync: async function(sql, params = []) {
+    try {
+      const result = await pool.query(sql, params);
+      return { 
+        id: result.rows[0]?.id || null, 
+        changes: result.rowCount 
+      };
+    } catch (error) {
+      throw error;
+    }
+  },
+  
+  getAsync: async function(sql, params = []) {
+    try {
+      const result = await pool.query(sql, params);
+      return result.rows[0] || null;
+    } catch (error) {
+      throw error;
+    }
+  },
+  
+  allAsync: async function(sql, params = []) {
+    try {
+      const result = await pool.query(sql, params);
+      return result.rows;
+    } catch (error) {
+      throw error;
+    }
+  }
 };
 
 const initializeDatabase = async () => {
   try {
     const tableExists = await db.getAsync(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
+      "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'users')"
     );
     
-    if (!tableExists) {
+    if (!tableExists.exists) {
       console.log('Database not initialized. Run: npm run init-db');
     } else {
       console.log('Database is ready.');
@@ -75,7 +73,6 @@ const initializeDatabase = async () => {
   }
 };
 
-// Run initialization check
 initializeDatabase();
 
 module.exports = db;
