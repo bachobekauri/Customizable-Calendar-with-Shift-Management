@@ -1,4 +1,3 @@
-
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 require('dotenv').config();
@@ -23,7 +22,7 @@ const runQuery = async (sql, params = []) => {
 
 const dropTables = async () => {
   try {
-    const tables = ['shift_employees', 'shift_requests', 'notifications', 'audit_logs', 'shifts', 'users'];
+    const tables = ['shift_employees', 'shift_requests', 'notifications', 'audit_logs', 'shifts', 'users', 'settings'];
     
     for (const table of tables) {
       try {
@@ -146,6 +145,17 @@ const createTables = async () => {
       )
     `);
     console.log('✅ Created audit_logs table');
+
+    await runQuery(`
+      CREATE TABLE settings (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        key TEXT UNIQUE NOT NULL,
+        value TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ Created settings table');
   } catch (error) {
     throw error;
   }
@@ -165,7 +175,8 @@ const createIndexes = async () => {
       `CREATE INDEX idx_shift_requests_requested_by ON shift_requests(requested_by)`,
       `CREATE INDEX idx_shift_requests_status ON shift_requests(status)`,
       `CREATE INDEX idx_notifications_user ON notifications(user_id)`,
-      `CREATE INDEX idx_audit_logs_user ON audit_logs(user_id)`
+      `CREATE INDEX idx_audit_logs_user ON audit_logs(user_id)`,
+      `CREATE INDEX idx_settings_key ON settings(key)`
     ];
 
     for (const indexSql of indexes) {
@@ -212,6 +223,30 @@ const insertDefaultUsers = async () => {
   }
 };
 
+const insertDefaultSettings = async () => {
+  try {
+    const defaultSettings = [
+      { key: 'companyName', value: 'Coral LAB' },
+      { key: 'defaultShiftHours', value: '8' },
+      { key: 'defaultHourlyRate', value: '20' },
+      { key: 'defaultLocation', value: 'Main Office' },
+      { key: 'emailNotifications', value: 'true' },
+      { key: 'shiftReminders', value: 'true' }
+    ];
+
+    for (const setting of defaultSettings) {
+      await runQuery(
+        `INSERT INTO settings (key, value) VALUES ($1, $2)`,
+        [setting.key, setting.value]
+      );
+    }
+    console.log('✅ Default settings created');
+  } catch (error) {
+    console.error('Error inserting settings:', error.message);
+    throw error;
+  }
+};
+
 const main = async () => {
   try {
     console.log('Starting PostgreSQL database reset...');
@@ -220,6 +255,7 @@ const main = async () => {
     await createTables();
     await createIndexes();
     await insertDefaultUsers();
+    await insertDefaultSettings();
     
     console.log('\n=== POSTGRESQL DATABASE RESET COMPLETE ===');
     console.log('\nDefault login credentials:');

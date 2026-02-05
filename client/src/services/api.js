@@ -1,6 +1,5 @@
 import axios from 'axios';
 
-// Create axios instance with base URL
 const API = axios.create({
   baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5000/api',
   headers: {
@@ -8,7 +7,6 @@ const API = axios.create({
   }
 });
 
-// Add request interceptor to attach token
 API.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) {
@@ -17,7 +15,6 @@ API.interceptors.request.use((config) => {
   return config;
 });
 
-// Add response interceptor to handle errors
 API.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -72,6 +69,13 @@ export const notificationService = {
 
 export const auditService = {
   getAuditLogs: (params) => API.get('/audit-logs', { params })
+};
+
+export const settingsService = {
+  getSettings: () => API.get('/settings'),
+  updateSettings: (settings) => API.put('/settings', settings),
+  backupDatabase: () => API.post('/settings/backup-database'),
+  resetDatabase: () => API.post('/settings/reset-database')
 };
 
 export default API;

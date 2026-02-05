@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import moment from "moment";
 import "./ShiftModal.css";
+import { settingsService } from '../services/api';
 
 /**
  * Props:
@@ -32,6 +33,7 @@ const ShiftModal = ({
   const [validationError, setValidationError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [selectedEmployees, setSelectedEmployees] = useState([]);
+  const [defaultSettings, setDefaultSettings] = useState(null);
 
   const [formData, setFormData] = useState({
     title: "",
@@ -46,6 +48,26 @@ const ShiftModal = ({
     employees: [],
   });
 
+  useEffect(() => {
+    const fetchDefaultSettings = async () => {
+      try {
+        const response = await settingsService.getSettings();
+        if (response.data.success) {
+          setDefaultSettings(response.data.data);
+        }
+      } catch (error) {
+        console.error('Error fetching default settings:', error);
+        setDefaultSettings({
+          defaultHourlyRate: 20,
+          defaultLocation: 'Main Office',
+          defaultShiftHours: 8
+        });
+      }
+    };
+
+    fetchDefaultSettings();
+  }, []);
+
   const normalizeShiftToForm = (s) => {
     const safeStart = s?.startTime ? moment(s.startTime).local() : null;
     const safeEnd = s?.endTime ? moment(s.endTime).local() : null;
@@ -56,8 +78,8 @@ const ShiftModal = ({
       endTime: safeEnd ? safeEnd.format("YYYY-MM-DDTHH:mm") : "",
       department: s?.department || user?.department || "General",
       requiredEmployees: s?.requiredEmployees || 1,
-      hourlyRate: s?.hourlyRate || 20,
-      location: s?.location || "Main Office",
+      hourlyRate: s?.hourlyRate || (defaultSettings?.defaultHourlyRate || 20),
+      location: s?.location || (defaultSettings?.defaultLocation || "Main Office"),
       status: s?.status || "published",
       employees: Array.isArray(s?.employees) ? s.employees.map((e) => (e._id ? e._id : e)) : [],
     };
@@ -74,11 +96,19 @@ const ShiftModal = ({
     } else if (shift && isDaySpecific) {
       const dateMoment = shift?.startTime ? moment(shift.startTime).local() : moment().local();
       const dateStr = dateMoment.format("YYYY-MM-DD");
+      
+      const shiftHours = defaultSettings?.defaultShiftHours || 8;
+      const startTime = `${dateStr}T09:00`;
+      const endMoment = moment(startTime).add(shiftHours, 'hours');
+      const endTime = endMoment.format("YYYY-MM-DDTHH:mm");
+      
       setFormData((prev) => ({
         ...prev,
-        startTime: `${dateStr}T09:00`,
-        endTime: `${dateStr}T17:00`,
+        startTime: startTime,
+        endTime: endTime,
         department: shift.department || user?.department || prev.department,
+        hourlyRate: defaultSettings?.defaultHourlyRate || prev.hourlyRate,
+        location: defaultSettings?.defaultLocation || prev.location,
       }));
       setSelectedEmployees([]);
     } else if (shift) {
@@ -87,21 +117,26 @@ const ShiftModal = ({
       setSelectedEmployees(normalized.employees || []);
     } else {
       const today = moment().local().format("YYYY-MM-DD");
+      const shiftHours = defaultSettings?.defaultShiftHours || 8;
+      const startTime = `${today}T09:00`;
+      const endMoment = moment(startTime).add(shiftHours, 'hours');
+      const endTime = endMoment.format("YYYY-MM-DDTHH:mm");
+      
       setFormData({
         title: "",
         description: "",
-        startTime: `${today}T09:00`,
-        endTime: `${today}T17:00`,
+        startTime: startTime,
+        endTime: endTime,
         department: user?.department || "General",
         requiredEmployees: 1,
-        hourlyRate: 20,
-        location: "Main Office",
+        hourlyRate: defaultSettings?.defaultHourlyRate || 20,
+        location: defaultSettings?.defaultLocation || "Main Office",
         status: "published",
         employees: [],
       });
       setSelectedEmployees([]);
     }
-  }, [shift, isDayMode, user?.department, isEditing]);
+  }, [shift, isDayMode, user?.department, isEditing, defaultSettings]);
 
   const handleEmployeeToggle = (id) => {
     setSelectedEmployees((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -209,47 +244,39 @@ const ShiftModal = ({
             style={{
               backgroundColor: "#FFE6E7",
               color: "#EA454C",
-              padding: "10px 12px",
-              borderRadius: 6,
-              marginBottom: 12,
-              fontSize: 14,
+              padding: "12px 16px",
+              borderRadius: "8px",
+              marginBottom: "16px",
+              fontSize: "14px",
+              border: "1px solid #EA454C"
             }}
+            role="alert"
           >
-            <span style={{ flex: 1 }}>{displayedError}</span>
-            <button
-              onClick={() => {
-                setValidationError(null);
-                clearError();
-              }}
-              style={{ background: "transparent", border: "none", fontSize: 18, color: "#EA454C", cursor: "pointer" }}
-              aria-label="Dismiss error"
-            >
-              ×
-            </button>
+            {displayedError}
           </div>
         )}
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label>Title *</label>
+            <label>Shift Title *</label>
             <input
               type="text"
+              placeholder="e.g., Morning Shift, Sales Floor"
               value={formData.title}
               onChange={(e) => setFormData((p) => ({ ...p, title: e.target.value }))}
               required
               disabled={!isManager || loading}
-              placeholder="Enter shift title"
             />
           </div>
 
           <div className="form-group">
             <label>Description</label>
             <textarea
+              placeholder="Add shift details..."
               value={formData.description}
               onChange={(e) => setFormData((p) => ({ ...p, description: e.target.value }))}
               rows="3"
               disabled={!isManager || loading}
-              placeholder="Shift description (optional)"
             />
           </div>
 

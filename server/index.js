@@ -1,4 +1,3 @@
-
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
@@ -16,6 +15,7 @@ const employees = require('./routes/employees');
 const requests = require('./routes/requests');
 const notifications = require('./routes/notifications');
 const auditLogs = require('./routes/auditLogs');
+const settings = require('./routes/settings');
 
 const app = express();
 
@@ -43,6 +43,7 @@ app.use('/api/employees', employees);
 app.use('/api/requests', requests);
 app.use('/api/notifications', notifications);
 app.use('/api/audit-logs', auditLogs);
+app.use('/api/settings', settings);
 
 app.get('/api/health', async (req, res) => {
   try {
@@ -98,6 +99,10 @@ app.use((req, res) => {
       'POST /api/requests/:id/cancel',
       'GET /api/notifications',
       'GET /api/audit-logs',
+      'GET /api/settings',
+      'PUT /api/settings',
+      'POST /api/settings/backup-database',
+      'POST /api/settings/reset-database',
     ]
   });
 });
@@ -125,6 +130,10 @@ const server = app.listen(PORT, () => {
   console.log('  ✓ POST /api/requests/:id/cancel');
   console.log('  ✓ GET  /api/notifications');
   console.log('  ✓ GET  /api/audit-logs');
+  console.log('  ✓ GET  /api/settings');
+  console.log('  ✓ PUT  /api/settings');
+  console.log('  ✓ POST /api/settings/backup-database');
+  console.log('  ✓ POST /api/settings/reset-database');
 });
 
 process.on('unhandledRejection', (err, promise) => {

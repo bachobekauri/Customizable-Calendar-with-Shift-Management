@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './mainPage.css';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { settingsService } from '../services/api';
 
 const SettingsPage = () => {
   const { user, logout, isManager, isAdmin } = useAuth();
@@ -14,10 +15,122 @@ const SettingsPage = () => {
     emailNotifications: true,
     shiftReminders: true
   });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState(null);
 
-  const handleSave = () => {
-    alert('Settings saved successfully!');
+  // Fetch settings on mount
+  useEffect(() => {
+    fetchSettings();
+  }, []);
+
+  const fetchSettings = async () => {
+    try {
+      const response = await settingsService.getSettings();
+      if (response.data.success) {
+        setSettings(response.data.data);
+      }
+    } catch (error) {
+      console.error('Error fetching settings:', error);
+      setMessage({ type: 'error', text: 'Failed to load settings' });
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setMessage(null);
+
+    try {
+      const response = await settingsService.updateSettings(settings);
+      if (response.data.success) {
+        setMessage({ type: 'success', text: 'Settings saved successfully!' });
+        setTimeout(() => setMessage(null), 3000);
+      }
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      setMessage({ 
+        type: 'error', 
+        text: error.response?.data?.message || 'Failed to save settings' 
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleBackup = async () => {
+    if (!window.confirm('This will create a backup of all data. Continue?')) {
+      return;
+    }
+
+    setMessage(null);
+    try {
+      const response = await settingsService.backupDatabase();
+      if (response.data.success) {
+        setMessage({ 
+          type: 'success', 
+          text: `Backup created successfully: ${response.data.filename}` 
+        });
+      }
+    } catch (error) {
+      console.error('Error backing up database:', error);
+      setMessage({ 
+        type: 'error', 
+        text: error.response?.data?.message || 'Failed to backup database' 
+      });
+    }
+  };
+
+  const handleReset = async () => {
+    const firstConfirm = window.confirm(
+      '⚠️ WARNING: This will reset ALL data to defaults.\n\n' +
+      'All shifts, users (except defaults), and custom settings will be PERMANENTLY DELETED.\n\n' +
+      'This action CANNOT be undone!\n\n' +
+      'Are you absolutely sure you want to continue?'
+    );
+    
+    if (!firstConfirm) {
+      return;
+    }
+
+    // Second confirmation with text input
+    const userInput = window.prompt(
+      'This is your last chance!\n\n' +
+      'Type "RESET" in capital letters to confirm:'
+    );
+    
+    if (userInput !== 'RESET') {
+      alert('Reset cancelled. The text did not match.');
+      return;
+    }
+
+    setMessage(null);
+    try {
+      const response = await settingsService.resetDatabase();
+      if (response.data.success) {
+        alert('Database reset successfully!\n\nYou will now be logged out.\n\nPlease log in again with default credentials:\n\nAdmin: admin@example.com / admin123');
+        logout();
+        navigate('/');
+      }
+    } catch (error) {
+      console.error('Error resetting database:', error);
+      setMessage({ 
+        type: 'error', 
+        text: error.response?.data?.message || 'Failed to reset database' 
+      });
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="main-container">
+        <div style={{ padding: '50px', textAlign: 'center' }}>
+          <div>Loading settings...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="main-container">
@@ -67,20 +180,34 @@ const SettingsPage = () => {
           <h1 style={{ margin: 0 }}>⚙️ System Settings</h1>
           <button
             onClick={handleSave}
+            disabled={saving}
             style={{
               padding: '10px 20px',
-              backgroundColor: '#40c3d8',
+              backgroundColor: saving ? '#999' : '#40c3d8',
               color: 'white',
               border: 'none',
               borderRadius: '6px',
-              cursor: 'pointer',
+              cursor: saving ? 'not-allowed' : 'pointer',
               fontSize: '16px',
               fontWeight: '600'
             }}
           >
-            Save Settings
+            {saving ? 'Saving...' : 'Save Settings'}
           </button>
         </div>
+
+        {message && (
+          <div style={{
+            padding: '15px',
+            marginBottom: '20px',
+            borderRadius: '8px',
+            backgroundColor: message.type === 'success' ? '#d4edda' : '#f8d7da',
+            color: message.type === 'success' ? '#155724' : '#721c24',
+            border: `1px solid ${message.type === 'success' ? '#c3e6cb' : '#f5c6cb'}`
+          }}>
+            {message.text}
+          </div>
+        )}
 
         <div style={{
           backgroundColor: 'white',
@@ -120,7 +247,7 @@ const SettingsPage = () => {
                 min="1"
                 max="24"
                 value={settings.defaultShiftHours}
-                onChange={(e) => setSettings({...settings, defaultShiftHours: parseInt(e.target.value)})}
+                onChange={(e) => setSettings({...settings, defaultShiftHours: parseInt(e.target.value) || 1})}
                 style={{
                   width: '100%',
                   padding: '10px',
@@ -140,7 +267,7 @@ const SettingsPage = () => {
                 min="0"
                 step="0.01"
                 value={settings.defaultHourlyRate}
-                onChange={(e) => setSettings({...settings, defaultHourlyRate: parseFloat(e.target.value)})}
+                onChange={(e) => setSettings({...settings, defaultHourlyRate: parseFloat(e.target.value) || 0})}
                 style={{
                   width: '100%',
                   padding: '10px',
@@ -206,42 +333,56 @@ const SettingsPage = () => {
             Database Management
           </h2>
           
+          <div style={{ 
+            backgroundColor: '#fff3cd', 
+            border: '1px solid #ffc107',
+            borderRadius: '8px',
+            padding: '15px',
+            marginBottom: '20px'
+          }}>
+            <strong>⚠️ Important:</strong> Database operations are permanent. Make sure you understand what you're doing.
+          </div>
+          
           <div style={{ display: 'flex', gap: '10px' }}>
             <button
-              onClick={() => {
-                if (window.confirm('This will backup all data. Continue?')) {
-                  alert('Backup initiated successfully!');
-                }
-              }}
+              onClick={handleBackup}
               style={{
                 padding: '10px 20px',
                 backgroundColor: '#4CAF50',
                 color: 'white',
                 border: 'none',
                 borderRadius: '6px',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                fontWeight: '600'
               }}
             >
-              Backup Database
+              💾 Backup Database
             </button>
             
             <button
-              onClick={() => {
-                if (window.confirm('This will reset all data to defaults. This action cannot be undone. Continue?')) {
-                  alert('Database reset initiated!');
-                }
-              }}
+              onClick={handleReset}
               style={{
                 padding: '10px 20px',
                 backgroundColor: '#EA454C',
                 color: 'white',
                 border: 'none',
                 borderRadius: '6px',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                fontWeight: '600'
               }}
             >
-              Reset Database
+              🔄 Reset Database
             </button>
+          </div>
+          
+          <div style={{
+            marginTop: '15px',
+            fontSize: '13px',
+            color: '#666',
+            lineHeight: '1.6'
+          }}>
+            <div><strong>Backup:</strong> Creates a SQL dump file in the backups folder on the server</div>
+            <div><strong>Reset:</strong> Deletes all data and recreates default users and settings (requires confirmation)</div>
           </div>
         </div>
       </div>
