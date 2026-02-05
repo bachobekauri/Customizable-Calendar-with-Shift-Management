@@ -216,7 +216,7 @@ const RequestsPage = () => {
           </h3>
 
           <div style={{ fontSize: '14px', color: '#666' }}>
-            <div><strong>By:</strong> {request.requestedByName || 'Unknown'}</div>
+            <div><strong>By:</strong> {request.requestedbyname || 'Unknown'}</div>
             {request.start_time && (
               <div><strong>Time:</strong> {moment(request.start_time).format('MMM DD, HH:mm')} - {moment(request.end_time).format('HH:mm')}</div>
             )}
@@ -509,7 +509,7 @@ const RequestsPage = () => {
 
               <div style={{ marginBottom: '20px' }}>
                 <strong>Requested By:</strong>
-                <div style={{ color: '#666', marginTop: '4px' }}>{selectedRequest.requestedByName}</div>
+                <div style={{ color: '#666', marginTop: '4px' }}>{selectedRequest.requestedbyname}</div>
               </div>
 
               <div style={{ marginBottom: '20px' }}>

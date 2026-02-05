@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const { protect, role } = require('../middleware/authMiddleware');
+const db = require('../db');
 
 const {
   getRequests,
@@ -16,6 +17,8 @@ const {
 router.use(protect);
 
 router.get('/', getRequests);
+
+router.get('/shift/:shiftId/available', role('manager', 'admin'), getAvailableReplacements);
 
 router.get('/:id', async (req, res) => {
   try {
@@ -61,6 +64,6 @@ router.post('/:id/reject', role('manager', 'admin'), rejectRequest);
 
 router.post('/:id/cancel', cancelRequest);
 
-router.get('/shift/:shiftId/available', role('manager', 'admin'), getAvailableReplacements);
+
 
 module.exports = router;
