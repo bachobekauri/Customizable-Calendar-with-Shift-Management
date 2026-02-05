@@ -175,7 +175,7 @@ const SettingsPage = () => {
         </div>
       </aside>
 
-      <div className="content">
+      <div className="content" style={{ overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', borderBottom: '1px solid #eee', paddingBottom: '20px' }}>
           <h1 style={{ margin: 0 }}>⚙️ System Settings</h1>
           <button
