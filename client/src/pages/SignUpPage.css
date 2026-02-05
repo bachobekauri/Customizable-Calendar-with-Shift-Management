@@ -1,19 +1,24 @@
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;500;600;700&display=swap');
 
-* { margin: 0; padding: 0; border: 0; }
+* { margin: 0; padding: 0; border: 0; box-sizing: border-box; }
+
+html, body { height: 100%; width: 100%; }
 
 .container {
     display: flex;
     height: 100vh;
     width: 100vw;
+    overflow: hidden;
 }
 
 .wrapper-left {
     width: 50%;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
     align-items: center;
+    padding: 40px 20px;
+    overflow-y: auto;
 }
 
 .wrapper-right {
@@ -24,16 +29,14 @@
 }
 
 .headline {
-    margin-bottom: 40px;
+    margin-bottom: 20px;
     text-align: center;
 }
-
-
 
 .inputField {
     width: 310px;
     height: 40px;
-    margin-bottom: 20px;
+    margin-bottom: 12px;
     padding-left: 15px;
     border: 1px solid rgba(0,0,0,0.25);
     border-radius: 12px;
@@ -46,8 +49,26 @@
     color: white;
     border-radius: 12px;
     margin-top: 10px;
+    cursor: pointer;
 }
 
 .signUpParagraph {
     margin-top: 10px;
+}
+
+.wrapper-left::-webkit-scrollbar {
+    width: 8px;
+}
+
+.wrapper-left::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+.wrapper-left::-webkit-scrollbar-thumb {
+    background: #EA454C;
+    border-radius: 4px;
+}
+
+.wrapper-left::-webkit-scrollbar-thumb:hover {
+    background: #d63c43;
 }
